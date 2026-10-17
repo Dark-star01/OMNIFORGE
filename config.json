@@ -2,7 +2,11 @@
   "appName": "OMNIFORGE",
   "appId": "com.dark.omniforge",
   "version": "1.0.0",
-  "env": { "enabled": false, "vars": {} },
+  "capacitorVersion": "7.6.9",
+  "env": {
+    "enabled": false,
+    "vars": {}
+  },
   "splash": {
     "enabled": true,
     "duration": 1800,
