@@ -105,7 +105,7 @@ class OmniSavePlugin : Plugin() {
 
     @PluginMethod
     fun abort(call: PluginCall) {
-        sinks.remove(call.getString("id") ?: "")?.abort()
+        sinks.remove(call.getString("id") ?: "")?.let { it.abort() }
         call.resolve()
     }
 
@@ -149,7 +149,7 @@ class OmniSavePlugin : Plugin() {
                 val path = sk.finish()
                 call.resolve(JSObject().put("path", path).put("bytes", got).put("contentType", ctype))
             } catch (e: Exception) {
-                try { sink?.abort() } catch (e2: Exception) {}
+                try { sink?.let { it.abort() } } catch (e2: Exception) {}
                 call.reject(if (e is InterruptedException) "cancelled" else (e.message ?: "download failed"))
             } finally { conn?.disconnect() }
         }
