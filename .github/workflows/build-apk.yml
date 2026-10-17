@@ -319,11 +319,19 @@ jobs:
           echo "✅ الملفات الجاهزة:"
           ls -l dist
 
+      # APK و BUILD_INFO.md كل واحد في Artifact منفصل: تنزّل الـAPK فقط أو التقرير فقط أو الاثنين
       - name: 📤 رفع APK
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.dist.outputs.artifact_name }}
-          path: dist/
+          path: dist/*.apk
+          retention-days: 30
+
+      - name: 📤 رفع BUILD_INFO.md
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.dist.outputs.artifact_name }}-BUILD_INFO
+          path: dist/BUILD_INFO.md
           retention-days: 30
 
       # ════════════════ 8) عند الفشل ════════════════
