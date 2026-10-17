@@ -1,0 +1,7 @@
+{
+  "name": "omni-save",
+  "version": "1.0.0",
+  "description": "OMNIFORGE: حفظ الملفات في التنزيلات/OMNIFORGE، تنزيل بتقدم، وطلبات HTTP أصلية (Kotlin)",
+  "files": ["android/"],
+  "capacitor": { "android": { "src": "android" } }
+}

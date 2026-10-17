@@ -1,0 +1,16 @@
+{
+  "appName": "OMNIFORGE",
+  "appId": "com.dark.omniforge",
+  "version": "1.0.0",
+  "env": { "enabled": false, "vars": {} },
+  "splash": {
+    "enabled": true,
+    "duration": 1800,
+    "backgroundColor": "#0f1117",
+    "textColor": "#f2f3f5",
+    "accentColor": "#ff8a3d",
+    "subtitle": "صندوق أدوات يعمل دون إنترنت",
+    "footer": "من تطوير دارك",
+    "logoFile": "logo.png"
+  }
+}
