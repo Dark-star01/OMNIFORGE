@@ -24,6 +24,7 @@ import java.util.concurrent.Executors
  * OmniSave — يخدم واجهة OMNIFORGE:
  *  begin/chunk/finish/abort : حفظ ملف على دفعات إلى التنزيلات/OMNIFORGE
  *  download/cancelDownload  : تنزيل رابط مباشر إلى الملف مع حدث downloadProgress
+ *  saveFromPath             : نقل ملف مؤقت (من omni-video) إلى التنزيلات/OMNIFORGE مع saveProgress
  *  request                  : طلب HTTP أصلي (بلا CORS)
  *  info                     : معلومات المحرك
  *
@@ -56,11 +57,18 @@ class OmniSavePlugin : Plugin() {
             val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
                 ?: throw IllegalStateException("تعذّر إنشاء الملف في التنزيلات")
             val os = resolver.openOutputStream(uri) ?: throw IllegalStateException("تعذّر فتح الملف للكتابة")
+            // MediaStore يعيد تسمية الملف تلقائياً إذا وُجد بنفس الاسم ("name (1).mp4"): نقرأ الاسم الفعلي
+            var shown = fname
+            try {
+                resolver.query(uri, arrayOf(MediaStore.Downloads.DISPLAY_NAME), null, null, null)?.use { c ->
+                    if (c.moveToFirst()) shown = c.getString(0) ?: fname
+                }
+            } catch (e: Exception) { /* نبقي الاسم المطلوب */ }
             return Sink(os, {
                 os.close()
                 val v = ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }
                 resolver.update(uri, v, null, null)
-                "Download/OMNIFORGE/$fname"
+                "Download/OMNIFORGE/$shown"
             }, {
                 try { os.close() } catch (e: Exception) {}
                 try { resolver.delete(uri, null, null) } catch (e: Exception) {}
@@ -152,6 +160,58 @@ class OmniSavePlugin : Plugin() {
                 try { sink?.let { it.abort() } } catch (e2: Exception) {}
                 call.reject(if (e is InterruptedException) "cancelled" else (e.message ?: "download failed"))
             } finally { conn?.disconnect() }
+        }
+    }
+
+    /**
+     * saveFromPath: ينقل ملفاً أنتجه بلاجن آخر (omni-video) من مجلد التطبيق المؤقت إلى التنزيلات/OMNIFORGE
+     * عبر نفس منطق الحفظ (MediaStore). يسمح فقط بالملفات داخل cacheDir/omni-video/ لمنع قراءة ملفات التطبيق الأخرى.
+     * يبثّ saveProgress {received,total}. deleteSource=true يحذف الأصل بعد النجاح.
+     */
+    @PluginMethod
+    fun saveFromPath(call: PluginCall) {
+        val path = call.getString("path") ?: return call.reject("المسار مفقود")
+        val name = call.getString("name") ?: "file"
+        val mime = call.getString("mime") ?: "application/octet-stream"
+        val del = call.getBoolean("deleteSource") ?: false
+        pool.execute {
+            var sink: Sink? = null
+            try {
+                val base = File(context.cacheDir, "omni-video").canonicalFile
+                val src = File(path).canonicalFile
+                if (!src.path.startsWith(base.path + File.separator) || !src.isFile) throw IllegalArgumentException("مسار غير مسموح أو الملف غير موجود")
+                val total = src.length()
+                val sk = openSink(context, name, mime)
+                sink = sk
+                var got = 0L
+                var lastEmit = 0L
+                src.inputStream().use { input ->
+                    val buf = ByteArray(256 * 1024)
+                    while (true) {
+                        val n = input.read(buf)
+                        if (n < 0) break
+                        sk.out.write(buf, 0, n)
+                        got += n
+                        val now = System.currentTimeMillis()
+                        if (now - lastEmit > 250) {
+                            lastEmit = now
+                            notifyListeners("saveProgress", JSObject().put("received", got).put("total", total))
+                        }
+                    }
+                }
+                notifyListeners("saveProgress", JSObject().put("received", got).put("total", total))
+                val saved = sk.finish()
+                sink = null
+                if (del) {
+                    src.delete()
+                    val parent = src.parentFile
+                    if (parent != null && parent != base) parent.delete() // لا يحذف إلا إن كان فارغاً
+                }
+                call.resolve(JSObject().put("path", saved).put("bytes", got))
+            } catch (e: Exception) {
+                try { sink?.let { it.abort() } } catch (e2: Exception) {}
+                call.reject(e.message ?: "save failed")
+            }
         }
     }
 

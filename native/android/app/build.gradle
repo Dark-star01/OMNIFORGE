@@ -1,0 +1,19 @@
+// تعديلات app/build.gradle لمحرك الفيديو (yt-dlp/Python/FFmpeg). تُدمج دمجاً ذكياً (إضافة فقط) عبر native.py files.
+android {
+    defaultConfig {
+        // المحرك ملفات .so ثقيلة لكل معمارية؛ نكتفي بمعماريات الهواتف الفعلية (أصغر حجماً):
+        //   arm64-v8a  : كل الهواتف الحديثة
+        //   armeabi-v7a: الهواتف 32-بت القديمة
+        // x86/x86_64 (المحاكيات فقط) غير مضمّنة. لاختبار على محاكي x86_64 أضفه هنا مؤقتاً.
+        ndk {
+            abiFilters 'arm64-v8a', 'armeabi-v7a'
+        }
+    }
+    // youtubedl-android يشغّل Python/FFmpeg كملفات تنفيذية من مجلد nativeLibraryDir:
+    // لازم تُستخرج الملفات عند التثبيت (extractNativeLibs=true).
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+}

@@ -1,0 +1,7 @@
+{
+  "name": "omni-video",
+  "version": "1.0.0",
+  "description": "OMNIFORGE: محرك استخراج وتنزيل الفيديو (yt-dlp عبر youtubedl-android) — بلاجن Capacitor/Kotlin",
+  "files": ["android/"],
+  "capacitor": { "android": { "src": "android" } }
+}

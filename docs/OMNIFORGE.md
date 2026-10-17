@@ -6,7 +6,10 @@
 | المسار | المحتوى |
 |---|---|
 | `webapp/omniforge.zip` | التطبيق (`index.html` في جذر الأرشيف + `css/ js/ libs/`)، بلا `package.json` فيُعامَل كمشروع ساكن |
-| `plugins/omni-save/` | بلاجن Kotlin للحفظ في التنزيلات وتنزيل بتقدم وطلبات HTTP أصلية (**لم يُجمَّع بعد**) |
+| `plugins/omni-save/` | بلاجن Kotlin للحفظ في التنزيلات وتنزيل بتقدم وطلبات HTTP أصلية، و`saveFromPath` لنقل ملف مؤقت من omni-video |
+| `plugins/omni-video/` | بلاجن Kotlin لمحرك استخراج الفيديو (yt-dlp عبر youtubedl-android + FFmpeg) — **لم يُجمَّع ولم يُختبر على أندرويد بعد** |
+| `native/android/app/build.gradle` | `abiFilters` (arm64-v8a, armeabi-v7a) + `useLegacyPackaging` لمحرك الفيديو |
+| `hooks/` | `pre-build.sh` يرفع minSdk إلى 24؛ `post-build.sh` يسجّل حجم APK لكل معمارية |
 | `config.json` | اسم التطبيق وهويته وألوان السبلاش |
 | `splash/logo.png` | شعار أصلي مرسوم لهذا المشروع |
 | `omniforge-src/` | المصدر الذي يُبنى منه الـzip |
@@ -23,8 +26,8 @@
 
 ## الحالات
 - **ready (29)**: pdf-workshop, archive-manager, mhtml-workshop (أداتك الأصلية), file-audit, file-split-join, image-workshop, color-studio, svg-workshop, gif-studio, subtitle-workshop, text-workshop, text-diff, encoder-studio, markdown-workshop, snippets, data-workshop, table-workshop, regex-lab, test-data, jwt-inspector, url-workshop, html-playground, secure-generator, hash-studio, metadata-cleaner, encryptor, unit-converter, datetime-workshop, calculator
-- **partial (11)**: audio-workshop (WAV فقط), video-workshop (قص بتسجيل WebM فوري)، code-formatter (CSS/HTML/JSON… لا JS)، api-lab / network-tools / downloader (CORS في المتصفح؛ المحرك الأصلي داخل APK)، redactor (نص فقط)، qr-studio (القراءة تعتمد على BarcodeDetector)، apk-workshop، storage-analyzer، font-inspector (WOFF2 معاينة فقط)
-- **requires-service (1)**: video-link-downloader
+- **partial (12)**: video-link-downloader (يعمل داخل APK فقط؛ محرك yt-dlp)، audio-workshop (WAV فقط), video-workshop (قص بتسجيل WebM فوري)، code-formatter (CSS/HTML/JSON… لا JS)، api-lab / network-tools / downloader (CORS في المتصفح؛ المحرك الأصلي داخل APK)، redactor (نص فقط)، qr-studio (القراءة تعتمد على BarcodeDetector)، apk-workshop، storage-analyzer، font-inspector (WOFF2 معاينة فقط)
+- **requires-service (0)**
 - **unavailable (3)**: doc-converter, ocr-extractor, speech-tools
 
 ## المكتبات الخارجية (نسخ محلية، لا CDN)
@@ -53,3 +56,10 @@
 - محقَّق بمخرجات تُفحص خارجياً: QR (160 توليفة إصدار/مستوى بقارئ OpenCV)، GIF (Pillow)، دمج/استخراج/تحويل PDF (pypdf)، ZIP (`unzip -t`/zipfile)، المقاطع الصوتية والفيديو (ffprobe/ffmpeg)، تنظيف EXIF/PNG/PDF، تقسيم ثم دمج ملف (SHA-256 متطابق)، قراءة خطوط TTF/WOFF، AXML بنمطي UTF-16/UTF-8 (ملفات اختبار مولَّدة، **لا APK حقيقي**)، إعادة كتابة ZIP بمحاذاة 4 بايت.
 - فُتحت دون اختبار وظيفي معمّق: text-workshop, encoder-studio, markdown-workshop, data-workshop, table-workshop, test-data, html-playground, snippets, redactor, svg/color/subtitle (واجهات)، calculator (واجهة).
 - أخطاء وُجدت وأُصلحت أثناء الاختبار: قراءة نوع قيم AXML، صياغة CSS المضغوط، قوس زائد في images.js.
+
+## أداة «تنزيل فيديو من رابط» (محرك yt-dlp المحلي)
+التدفق: `js/tools/videolink.js` (واجهة) ← `js/video-core.js` (`OF.video`: extract/buildOptions/download/queue/classifyError) ← بلاجن `OmniVideo` (Kotlin، yt-dlp) ← `OmniSave.saveFromPath` (الحفظ في التنزيلات/OMNIFORGE).
+- الروابط المباشرة (.mp4 وغيرها) لا تمر بالمحرك: `OmniSave.download` مباشرة.
+- استبدال المحرك: adapter جديد (`OF.video.useAdapter`) + بلاجن بنفس واجهة `extract/download/cancel`، بلا لمس الواجهة. تحديث yt-dlp نفسه من داخل الأداة (`updateEngine`).
+- الترخيص: youtubedl-android بـ GPL-3.0 — راجع plugins/omni-video/README.md.
+- الاختبارات: `node tests/video-core.test.js` (وحدة، 75 حالة) و`node tests/video-ui.test.js` (Chromium بمحرك وهمي، 27 سيناريو). **لا تغطي Kotlin ولا yt-dlp ولا أندرويد.**
