@@ -11,6 +11,7 @@
 | `plugins/omni-native/` | بلاجن Kotlin: تنزيل قابل للاستئناف (Range)، فحص TCP/DNS، مساحة التخزين، اختيار/مسح مجلد (SAF)، نقل الملفات إلى مجلد العمل، **توقيع APK والتحقق منه (apksig 8.7.3)** — **لم يُجمَّع مقابل المكتبات الحقيقية ولم يُختبر على جهاز** |
 | `plugins/omni-media/` | بلاجن Kotlin يشغّل FFmpeg المضمّن (نفس ثنائي omni-video، بلا مكتبة إضافية) لقص/تحويل/ضغط/دمج MP4 بتحقق صارم من الوسائط (`FfArgs`) — **لم يُجرَّب على جهاز** |
 | `plugins/omni-ocr/` | بلاجن Kotlin لـ OCR عربي/إنجليزي بـ Tesseract4Android 4.9.0 (**من JitPack**؛ إن تعذّر حلّها فاحذف المجلد). النماذج tessdata_fast تُنزَّل في `hooks/pre-build.sh` إلى `assets_inject/tessdata` — **لم يُجمَّع ولم يُجرَّب** |
+| `omniforge-src/js/prompt-forge/` + `config/prompt-forge/` | أداة Prompt Forge (بناء Prompt للصور/الفيديو): منطق + طبقة نموذج + تعليمات وPresets JSON. وضع **Mock** فقط حالياً؛ Qwen3-0.6B-GGUF (Local AI) غير مدمج — انظر `docs/PROMPT_FORGE.md` |
 | `native/android/app/build.gradle` | `abiFilters` (arm64-v8a, armeabi-v7a) + `useLegacyPackaging` لمحرك الفيديو |
 | `hooks/` | `pre-build.sh` يرفع minSdk إلى 24 وينزّل نماذج OCR (غير حرج)؛ `post-build.sh` يسجّل حجم APK لكل معمارية |
 | `config.json` | اسم التطبيق وهويته وألوان السبلاش |
@@ -27,9 +28,9 @@
 3. استخدم `OF.ui` (card, field, btn, files, tabs, task, out, saveRow) و`OF.save` للحفظ.
 لا تعديل على الراوتر ولا الصفحة الرئيسية. الأداة ذات الحالة `unavailable` أو `requires-service` تعرض السبب بلا أزرار تنفيذ.
 
-## الحالات (44 أداة)
+## الحالات (45 أداة)
 - **ready (30)**: pdf-workshop, archive-manager (ZIP/TAR/TGZ + ZIP مشفّر ZipCrypto), mhtml-workshop, file-audit, file-split-join, image-workshop, color-studio, svg-workshop, gif-studio (مع تفكيك GIF), subtitle-workshop (SRT/VTT/ASS), text-workshop, text-diff, encoder-studio, markdown-workshop, snippets, data-workshop (مع TOML), table-workshop, regex-lab, test-data, jwt-inspector, url-workshop, html-playground, secure-generator, hash-studio, metadata-cleaner, encryptor, unit-converter, datetime-workshop, calculator, code-formatter (CSS/HTML/JSON/JS)
-- **partial (12)**: video-link-downloader, video-workshop (MP4 عبر FFmpeg داخل APK + WebM في المتصفح), audio-workshop (WAV فقط), apk-workshop (تعديل مانيفست تجريبي + توقيع apksig), ocr-extractor (صور فقط، APK فقط), api-lab, network-tools (TCP/DNS محلي داخل APK), downloader (استئناف داخل APK), storage-analyzer (مسح مجلد أصلي داخل APK), redactor, qr-studio, font-inspector
+- **partial (13)**: prompt-forge (Mock فقط؛ لا محرك محلي مدمج), video-link-downloader, video-workshop (MP4 عبر FFmpeg داخل APK + WebM في المتصفح), audio-workshop (WAV فقط), apk-workshop (تعديل مانيفست تجريبي + توقيع apksig), ocr-extractor (صور فقط، APK فقط), api-lab, network-tools (TCP/DNS محلي داخل APK), downloader (استئناف داخل APK), storage-analyzer (مسح مجلد أصلي داخل APK), redactor, qr-studio, font-inspector
 - **requires-service (0)**
 - **unavailable (2)**: doc-converter, speech-tools (مؤجَّلان عمداً — راجع «ما أُجِّل عمداً»)
 - كل أداة `partial` تعتمد على جزء أصلي **لم يُجرَّب على جهاز**؛ لذلك لم تُوسَم `ready` مهما اجتازت اختبارات المحاكاة.
@@ -69,7 +70,7 @@
 
 ## نتائج الاختبار (بيئة Chromium/Playwright)
 نُفِّذت داخل بيئة التطوير؛ لم يُختبر شيء على جهاز أندرويد.
-- فتح كل الأدوات الـ44 على عرض 390px: بلا أخطاء كونسول ولا تمرير أفقي.
+- فتح كل الأدوات الـ45 على عرض 390px: بلا أخطاء كونسول ولا تمرير أفقي.
 - محقَّق بمخرجات تُفحص خارجياً: QR (160 توليفة إصدار/مستوى بقارئ OpenCV)، GIF (Pillow)، دمج/استخراج/تحويل PDF (pypdf)، ZIP (`unzip -t`/zipfile)، المقاطع الصوتية والفيديو (ffprobe/ffmpeg)، تنظيف EXIF/PNG/PDF، تقسيم ثم دمج ملف (SHA-256 متطابق)، قراءة خطوط TTF/WOFF، AXML بنمطي UTF-16/UTF-8 (ملفات اختبار مولَّدة، **لا APK حقيقي**)، إعادة كتابة ZIP بمحاذاة 4 بايت.
 - فُتحت دون اختبار وظيفي معمّق: text-workshop, encoder-studio, markdown-workshop, data-workshop, table-workshop, test-data, html-playground, snippets, redactor, svg/color/subtitle (واجهات)، calculator (واجهة).
 - أخطاء وُجدت وأُصلحت أثناء الاختبار: قراءة نوع قيم AXML، صياغة CSS المضغوط، قوس زائد في images.js.
@@ -82,8 +83,8 @@
 - الاختبارات: `node tests/video-core.test.js` (وحدة، 75 حالة) و`node tests/video-ui.test.js` (Chromium بمحرك وهمي، 27 سيناريو). **لا تغطي Kotlin ولا yt-dlp ولا أندرويد.**
 
 ## الاختبارات (تشغيل)
-- Node: `node tests/<name>.test.js` لـ toml, tar, zipcrypto, gifdec, ffcmd, axml (يحتاج python3)، x509 (يحتاج openssl/java)، jsfmt, video-core.
-- Chromium (خادم ساكن على 8765 لمجلد التطبيق، `BASE` لتغييره): `small-ui`, `video-ui`, `apk-ui`, `video-ff-ui`, `ocr-ui`, `native-ui` — البلاجنات الأصلية مُحاكاة (تتحقق من الاستدعاءات والواجهة فقط).
+- Node: `node tests/<name>.test.js` لـ promptforge (منطق Prompt Forge + طبقة النموذج)، toml, tar, zipcrypto, gifdec, ffcmd, axml (يحتاج python3)، x509 (يحتاج openssl/java)، jsfmt, video-core.
+- Chromium (خادم ساكن على 8765 لمجلد التطبيق، `BASE` لتغييره): `promptforge-ui`, `small-ui`, `video-ui`, `apk-ui`, `video-ff-ui`, `ocr-ui`, `native-ui` — البلاجنات الأصلية مُحاكاة (تتحقق من الاستدعاءات والواجهة فقط).
 - JVM/Kotlin: `node tests/kt/gen_ff_cases.js && tests/kt/run_jvm.sh` (يتطلب ffmpeg على المضيف وGradle lib لمترجم Kotlin).
 
 ## الأدوات الأصلية الجديدة (ملخص التدفق)
