@@ -48,8 +48,10 @@
         all = pickFiles.files().concat(pickDir.files());
         out.clear();
         if (!all.length) return;
-        const r = analyze(all);
-        out.ok('تم تحليل ' + r.items.length + ' ملف — الإجمالي ' + OF.fmt.bytes(r.total));
+        show(analyze(all), '');
+      }
+      function show(r, note) {
+        out.ok('تم تحليل ' + (r.count != null ? r.count : r.items.length) + ' ملف — الإجمالي ' + OF.fmt.bytes(r.total) + (note || ''));
         const types = Object.entries(r.byType).sort((a, b) => b[1].size - a[1].size);
         out.add(ui.card('حسب النوع', ...types.map(([t, v]) => {
           const pct = r.total ? v.size / r.total * 100 : 0;
@@ -60,14 +62,33 @@
         out.add(ui.card('أكثر الامتدادات حجماً', ui.kv(exts.map(([e, v]) => [e, v.n + ' ملف — ' + OF.fmt.bytes(v.size)]))));
         const big = r.items.slice().sort((a, b) => b.size - a.size).slice(0, 15);
         out.add(ui.card('أكبر الملفات', ui.kv(big.map(it => [it.name, OF.fmt.bytes(it.size)]))));
-        if (r.dups.length) out.add(ui.card('ملفات يُحتمل تكرارها (الاسم والحجم نفسهما)', h('p', { class: 'muted small', text: 'مؤشر فقط: لم تُقارَن المحتويات.' }), ui.kv(r.dups.slice(0, 15).map(g => [g[0].name.split('/').pop() + ' × ' + g.length, OF.fmt.bytes(g[0].size)]))));
+        if (r.dups && r.dups.length) out.add(ui.card('ملفات يُحتمل تكرارها (الاسم والحجم نفسهما)', h('p', { class: 'muted small', text: 'مؤشر فقط: لم تُقارَن المحتويات.' }), ui.kv(r.dups.slice(0, 15).map(g => [g[0].name.split('/').pop() + ' × ' + g.length, OF.fmt.bytes(g[0].size)]))));
       }
+      // نتيجة المسح الأصلي → نفس شكل analyze()
+      function fromNative(r) {
+        const byType = {}, byExt = {};
+        for (const e of r.byExt) { const t = typeOf('x.' + e.ext); (byType[t] = byType[t] || { n: 0, size: 0 }); byType[t].n += e.count; byType[t].size += e.bytes; byExt[e.ext] = { n: e.count, size: e.bytes }; }
+        return { items: r.largest.map(b => ({ name: b.path || b.name, size: b.size })), total: r.bytes, byType, byExt, dups: [], count: r.files };
+      }
+      const nn = OF.nat && OF.nat.available() && OF.nat.plugin().scanFolder ? OF.nat.plugin() : null;
+      const natCard = nn ? (() => {
+        const b = ui.btn('اختر مجلداً وحلّله (أصلي)', null, { kind: 'primary' }); const nout = ui.out(); const stop = ui.btn('إيقاف', null, { small: true, kind: 'danger' }); let sid = null;
+        ui.task(b, nout, async t => {
+          let f; try { f = await nn.pickFolder(); } catch (e) { if (OF.nat.isCancel(e)) { const er = new Error('لم يُختر مجلد'); er.name = 'AbortError'; throw er; } throw new Error(OF.nat.errorText(e)); }
+          sid = 'scan' + Date.now(); const off = await OF.nat.on('nativeProgress', e => { if (e.phase === 'scan' && e.id === sid) t.progress(null, e.files + ' ملف — ' + OF.fmt.bytes(e.bytes)); });
+          t.progress(null, 'مسح «' + (f.name || 'المجلد') + '»…'); let r; try { r = await nn.scanFolder({ uri: f.uri, id: sid }); } catch (e) { if (t.cancelled || OF.nat.isCancel(e)) { const er = new Error('أُوقف المسح'); er.name = 'AbortError'; throw er; } throw new Error(OF.nat.errorText(e)); } finally { off(); }
+          out.clear(); show(fromNative(r), ' (في ' + r.dirs + ' مجلد)'); if (r.truncated) out.warn('توقّف المسح عند حد الحجم/الزمن (300 ألف ملف أو 90 ثانية)؛ النتائج جزئية.'); out.info('المسح الأصلي لا يكشف المكررات (الأسماء فقط، بدون مسارات كاملة لكل ملف).');
+          nout.ok('اكتمل المسح'); }, { cancelable: true });
+        return ui.card('تحليل مجلد (أصلي)', h('p', { class: 'muted small', text: 'يمسح المجلد بالكامل داخل التطبيق دون تحميل الملفات إلى الذاكرة، ويعمل على المجلدات الكبيرة. تقرأ الأسماء والأحجام فقط.' }), b, nout);
+      })() : null;
       box.append(
         ui.card('مساحة تخزين التطبيق', est),
+        ...(natCard ? [natCard] : []),
         ui.card('اختر ما تريد تحليله', h('p', { class: 'muted small', text: 'يُحلَّل ما تختاره فقط؛ لا يمكن لـ WebView فحص كامل تخزين الهاتف. لا يُرفع شيء ولا تُقرأ محتويات الملفات.' }), pickFiles, pickDir),
         out);
       (async () => {
         try {
+          if (nn && nn.storageInfo) { try { const si = await nn.storageInfo(); const rows = []; const v = (n, x) => x && rows.push([n, OF.fmt.bytes(x.free) + ' متاح من ' + OF.fmt.bytes(x.total) + ' (مستخدم ' + OF.fmt.bytes(x.total - x.free) + ')']); v('التخزين الداخلي', si.internal); if (si.shared && (!si.internal || si.shared.total !== si.internal.total)) v('التخزين المشترك', si.shared); if (si.app) rows.push(['ملفات التطبيق', OF.fmt.bytes(si.app.files)], ['ذاكرة التطبيق المؤقتة', OF.fmt.bytes((si.app.cache || 0) + (si.app.externalCache || 0))]); est.appendChild(ui.kv(rows)); return; } catch (e) { /* ننتقل للتقدير */ } }
           if (!navigator.storage || !navigator.storage.estimate) { est.appendChild(h('p', { class: 'muted small', text: 'التقدير غير مدعوم في هذا النظام.' })); return; }
           const e = await navigator.storage.estimate();
           est.appendChild(ui.kv([['المستخدم', OF.fmt.bytes(e.usage || 0)], ['الحصة المتاحة (تقديرية)', OF.fmt.bytes(e.quota || 0)]]));

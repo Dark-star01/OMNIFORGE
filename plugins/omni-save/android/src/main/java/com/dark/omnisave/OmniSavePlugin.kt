@@ -24,7 +24,7 @@ import java.util.concurrent.Executors
  * OmniSave — يخدم واجهة OMNIFORGE:
  *  begin/chunk/finish/abort : حفظ ملف على دفعات إلى التنزيلات/OMNIFORGE
  *  download/cancelDownload  : تنزيل رابط مباشر إلى الملف مع حدث downloadProgress
- *  saveFromPath             : نقل ملف مؤقت (من omni-video) إلى التنزيلات/OMNIFORGE مع saveProgress
+ *  saveFromPath             : نقل ملف مؤقت (من omni-video أو omni-media/omni-native) إلى التنزيلات/OMNIFORGE مع saveProgress
  *  request                  : طلب HTTP أصلي (بلا CORS)
  *  info                     : معلومات المحرك
  *
@@ -165,7 +165,7 @@ class OmniSavePlugin : Plugin() {
 
     /**
      * saveFromPath: ينقل ملفاً أنتجه بلاجن آخر (omni-video) من مجلد التطبيق المؤقت إلى التنزيلات/OMNIFORGE
-     * عبر نفس منطق الحفظ (MediaStore). يسمح فقط بالملفات داخل cacheDir/omni-video/ لمنع قراءة ملفات التطبيق الأخرى.
+     * عبر نفس منطق الحفظ (MediaStore). يسمح فقط بالملفات داخل cacheDir/omni-video/ أو cacheDir/omni-work/ لمنع قراءة ملفات التطبيق الأخرى.
      * يبثّ saveProgress {received,total}. deleteSource=true يحذف الأصل بعد النجاح.
      */
     @PluginMethod
@@ -177,9 +177,11 @@ class OmniSavePlugin : Plugin() {
         pool.execute {
             var sink: Sink? = null
             try {
-                val base = File(context.cacheDir, "omni-video").canonicalFile
+                // مجلدا العمل المسموحان فقط: omni-video (محرك الفيديو) و omni-work (FFmpeg/الأدوات الأصلية)
+                val bases = listOf("omni-video", "omni-work").map { File(context.cacheDir, it).canonicalFile }
                 val src = File(path).canonicalFile
-                if (!src.path.startsWith(base.path + File.separator) || !src.isFile) throw IllegalArgumentException("مسار غير مسموح أو الملف غير موجود")
+                val base = bases.firstOrNull { src.path.startsWith(it.path + File.separator) }
+                if (base == null || !src.isFile) throw IllegalArgumentException("مسار غير مسموح أو الملف غير موجود")
                 val total = src.length()
                 val sk = openSink(context, name, mime)
                 sink = sk

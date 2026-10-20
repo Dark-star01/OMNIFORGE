@@ -1,0 +1,27 @@
+// وحدة مكتبة أندرويد للبلاجن. AGP و Kotlin يضيفهما APKMaker في build.gradle الجذر.
+apply plugin: 'com.android.library'
+apply plugin: 'org.jetbrains.kotlin.android'
+
+android {
+    namespace "com.dark.omnimedia"
+    compileSdk rootProject.ext.compileSdkVersion
+    defaultConfig {
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode 1
+        versionName "1.0"
+    }
+    compileOptions {
+        sourceCompatibility rootProject.ext.darkJava
+        targetCompatibility rootProject.ext.darkJava
+    }
+    kotlinOptions {
+        jvmTarget = rootProject.ext.darkJava.toString()
+    }
+}
+
+dependencies {
+    implementation project(':capacitor-android')
+    // ثنائي FFmpeg نفسه الذي يستخدمه omni-video (لا يزيد حجم التطبيق): يُفكّ إلى noBackupFilesDir عند أول تشغيل
+    implementation "io.github.junkfood02.youtubedl-android:ffmpeg:0.18.1"
+}

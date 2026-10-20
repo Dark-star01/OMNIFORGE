@@ -203,9 +203,31 @@
         outp.value = s; counts.length ? (out.ok('تم الإخفاء'), out.kv(counts)) : out.info('لم يُعثر على بيانات مطابقة. راجع النص يدوياً أيضاً.');
         out.warn('الاكتشاف تلقائي بأنماط عامة وقد يفوّت بيانات (أسماء، عناوين…). راجع النتيجة قبل المشاركة.');
       }, { kind: 'primary' });
-      box.append(ui.card('النص', inp), ui.card('ما يُخفى', h('div', { class: 'grid' }, checks.map(c => c[1])), custom, ui.field('أسلوب الإخفاء', style), go), out, ui.card('النتيجة', outp, ui.copyBtn(() => outp.value)));
+      box.append(ui.card('النص', inp), ui.card('ما يُخفى', h('div', { class: 'grid' }, checks.map(c => c[1])), custom, ui.field('أسلوب الإخفاء', style), go), out, ui.card('النتيجة', outp, ui.copyBtn(() => outp.value)), imageRedactCard());
     },
   };
+  /* إخفاء مناطق داخل الصور: تُستبدل البكسلات فعلياً ثم تُعاد كتابة الصورة (فتُزال بيانات EXIF/GPS). */
+  function imageRedactCard() {
+    const pick = ui.files({ accept: 'image/*', label: 'اختر صورة لإخفاء مناطق منها', exts: ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif'], mimes: ['image/'], maxMB: 40 });
+    const mode = ui.select([['fill', 'تعبئة صلبة (الأكثر أماناً)'], ['pixel', 'تبكسل خشن (أضعف أماناً)']], 'fill'); const color = ui.input({ value: '#000000', dir: 'ltr' }); const fmt = ui.select([['image/png', 'PNG'], ['image/jpeg', 'JPEG']], 'image/png');
+    const cv = h('canvas', { style: { width: '100%', maxWidth: '100%', touchAction: 'none', border: '1px solid var(--line, #8884)', borderRadius: '8px', display: 'none', cursor: 'crosshair' } }); const out = ui.out(); let img = null, rects = [], drag = null, name = 'image';
+    const draw = () => { if (!img) return; const g = cv.getContext('2d'); g.drawImage(img, 0, 0, cv.width, cv.height); const lw = Math.max(2, cv.width / 400); for (const r of rects) { g.fillStyle = mode.value === 'fill' ? color.value : 'rgba(255,0,0,.35)'; g.fillRect(r.x, r.y, r.w, r.h); g.strokeStyle = '#e11'; g.lineWidth = lw; g.strokeRect(r.x, r.y, r.w, r.h); } if (drag) { g.strokeStyle = '#0af'; g.lineWidth = lw; g.setLineDash([lw * 3, lw * 2]); g.strokeRect(drag.x, drag.y, drag.w, drag.h); g.setLineDash([]); } };
+    const pos = e => { const b = cv.getBoundingClientRect(); return { x: Math.min(cv.width, Math.max(0, (e.clientX - b.left) * cv.width / b.width)), y: Math.min(cv.height, Math.max(0, (e.clientY - b.top) * cv.height / b.height)) }; };
+    let st = null; cv.addEventListener('pointerdown', e => { if (!img) return; cv.setPointerCapture(e.pointerId); st = pos(e); drag = { x: st.x, y: st.y, w: 0, h: 0 }; });
+    cv.addEventListener('pointermove', e => { if (!st) return; const p = pos(e); drag = { x: Math.min(st.x, p.x), y: Math.min(st.y, p.y), w: Math.abs(p.x - st.x), h: Math.abs(p.y - st.y) }; draw(); });
+    const end = () => { if (!st) return; if (drag && drag.w > 3 && drag.h > 3) rects.push(drag); st = null; drag = null; draw(); info(); }; cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', () => { st = null; drag = null; draw(); });
+    const cnt = h('span', { class: 'muted small', text: 'لا مناطق بعد' }); const info = () => (cnt.textContent = rects.length ? rects.length + ' منطقة محددة' : 'لا مناطق بعد');
+    const load = async () => { const f = pick.first(); if (!f) return; out.clear(); try { const im = await OF.loadImage(f); if (im.naturalWidth * im.naturalHeight > 64e6) throw new Error('الصورة كبيرة جداً (> 64 ميغابكسل)'); img = im; name = OF.baseOf(f.name); cv.width = im.naturalWidth; cv.height = im.naturalHeight; rects = []; cv.style.display = 'block'; draw(); info(); out.info('اسحب بالإصبع/الفأرة على الصورة لتحديد مناطق الإخفاء.'); } catch (e) { img = null; cv.style.display = 'none'; out.error(e.message || String(e)); } };
+    pick.querySelector('input').addEventListener('change', () => setTimeout(load, 80)); mode.addEventListener('change', draw); color.addEventListener('input', () => { if (/^#[0-9a-f]{6}$/i.test(color.value)) draw(); });
+    const exp = ui.btn('طبّق وصدّر', null, { kind: 'primary' });
+    ui.task(exp, out, async t => { if (!img) throw new Error('اختر صورة أولاً'); if (!rects.length) throw new Error('حدد منطقة واحدة على الأقل'); if (mode.value === 'fill' && !/^#[0-9a-f]{6}$/i.test(color.value)) throw new Error('اللون بصيغة #RRGGBB');
+      const c = document.createElement('canvas'); c.width = cv.width; c.height = cv.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0);
+      for (const r of rects) { const x = Math.floor(r.x), y = Math.floor(r.y), w = Math.min(c.width - x, Math.ceil(r.w)), hh = Math.min(c.height - y, Math.ceil(r.h));
+        if (mode.value === 'fill') { g.fillStyle = color.value; g.fillRect(x, y, w, hh); }
+        else { const bs = Math.max(8, Math.round(Math.max(w, hh) / 6)); const id = g.getImageData(x, y, w, hh); const d = id.data; for (let by = 0; by < hh; by += bs) for (let bx = 0; bx < w; bx += bs) { let R = 0, G = 0, B = 0, n = 0; const ye = Math.min(hh, by + bs), xe = Math.min(w, bx + bs); for (let yy = by; yy < ye; yy++) for (let xx = bx; xx < xe; xx++) { const k = (yy * w + xx) * 4; R += d[k]; G += d[k + 1]; B += d[k + 2]; n++; } R = Math.round(R / n); G = Math.round(G / n); B = Math.round(B / n); for (let yy = by; yy < ye; yy++) for (let xx = bx; xx < xe; xx++) { const k = (yy * w + xx) * 4; d[k] = R; d[k + 1] = G; d[k + 2] = B; d[k + 3] = 255; } } g.putImageData(id, x, y); } }
+      const blob = await new Promise(r => c.toBlob(r, fmt.value, 0.92)); if (!blob) throw new Error('تعذر ترميز الصورة'); out.ok('تم إخفاء ' + rects.length + ' منطقة — ' + c.width + '×' + c.height + ' — ' + OF.fmt.bytes(blob.size)); out.info('الصورة الناتجة أُعيد ترميزها من البكسلات فقط: لا تحمل بيانات EXIF/GPS من الأصل.'); if (mode.value === 'pixel') out.warn('التبكسل قد يتيح تخميناً جزئياً للمحتوى؛ استخدم التعبئة الصلبة للبيانات الحساسة.'); out.add(ui.saveRow(name + '_redacted.' + (fmt.value === 'image/png' ? 'png' : 'jpg'), blob, { preview: true })); });
+    return ui.card('إخفاء مناطق داخل صورة', pick, cv, h('div', { class: 'row' }, ui.btn('تراجع', () => { rects.pop(); draw(); info(); }, { small: true }), ui.btn('مسح الكل', () => { rects = []; draw(); info(); }, { small: true }), cnt), ui.field('الأسلوب', mode), ui.field('اللون (للتعبئة)', color), ui.field('صيغة الإخراج', fmt), exp, out);
+  }
 
   /* ───────────── التشفير AES-256-GCM ───────────── */
   const MAGIC = [0x4F, 0x4D, 0x4E, 0x49]; const ITER = 600000;

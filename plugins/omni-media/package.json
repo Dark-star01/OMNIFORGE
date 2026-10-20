@@ -1,0 +1,7 @@
+{
+  "name": "omni-media",
+  "version": "1.0.0",
+  "description": "OMNIFORGE: ورشة الفيديو الأصلية — قص/تحويل/ضغط/دمج MP4 عبر FFmpeg المضمّن (نفس ثنائي omni-video، لا مكتبة إضافية)",
+  "files": ["android/"],
+  "capacitor": { "android": { "src": "android" } }
+}

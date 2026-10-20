@@ -1,0 +1,7 @@
+{
+  "name": "omni-native",
+  "version": "1.0.0",
+  "description": "OMNIFORGE: أدوات أصلية — تنزيل قابل للاستئناف، فحص TCP/DNS، التخزين، اختيار المجلدات، نقل الملفات، وتوقيع APK (apksig)",
+  "files": ["android/"],
+  "capacitor": { "android": { "src": "android" } }
+}

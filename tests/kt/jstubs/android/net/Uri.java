@@ -1,0 +1,1 @@
+package android.net; public class Uri { public String getLastPathSegment(){return null;} public static Uri parse(String s){return null;} public static Uri fromFile(java.io.File f){return null;} public String getScheme(){return null;} }

@@ -1,7 +1,8 @@
 /* ورشة APK — محلية بالكامل.
  * ما ينفّذه فعلاً: قراءة ZIP/APK، فك AndroidManifest الثنائي (AXML) إلى نص، استخراج معلومات الحزمة والأذونات،
  * كشف أنظمة التوقيع، استبدال/إضافة/حذف ملفات (أيقونات، صور، assets) وإعادة التجميع مع محاذاة zipalign.
- * ما لا ينفّذه: فك resources.arsc، تعديل المانيفست الثنائي، Smali، والتوقيع (يحتاجان محركاً أصلياً — انظر README). */
+ * تعديل المانيفست الثنائي (تجريبي) عبر axml.js. التوقيع والتحقق (apksig) يعملان داخل التطبيق عبر بلاجن OmniNative فقط.
+ * ما لا ينفّذه: فك resources.arsc، تعديل Smali/الموارد. */
 (function () {
   'use strict';
   const { h, ui } = OF;
@@ -87,6 +88,31 @@
   }
   const DANGEROUS = /(CAMERA|RECORD_AUDIO|READ_CONTACTS|WRITE_CONTACTS|ACCESS_FINE_LOCATION|ACCESS_COARSE_LOCATION|ACCESS_BACKGROUND_LOCATION|READ_SMS|SEND_SMS|RECEIVE_SMS|READ_PHONE_STATE|CALL_PHONE|READ_CALL_LOG|READ_EXTERNAL_STORAGE|WRITE_EXTERNAL_STORAGE|MANAGE_EXTERNAL_STORAGE|SYSTEM_ALERT_WINDOW|REQUEST_INSTALL_PACKAGES|BIND_ACCESSIBILITY_SERVICE|READ_CALENDAR|BODY_SENSORS)/;
 
+
+  /* ───────────── مفتاح التوقيع (يُحفظ في تخزين التطبيق الخاص) ───────────── */
+  const KEYSTORE = 'omni.apk.signkey.v1';
+  function loadKey() { try { const raw = localStorage.getItem(KEYSTORE); return raw ? OF.x509.fromBackup(raw) : null; } catch (e) { return null; } }
+  function saveKey(k) { try { localStorage.setItem(KEYSTORE, OF.x509.toBackup(k)); return true; } catch (e) { return false; } }
+  function dropKey() { try { localStorage.removeItem(KEYSTORE); } catch (e) { /* لا شيء */ } }
+  const nativeSign = () => { const n = OF.nat && OF.nat.available() ? OF.nat.plugin() : null; return n && n.signApk && n.verifyApk && OF.nat.save() && OF.nat.save().saveFromPath ? n : null; };
+  const signUi = { on: ui.check('وقّع الحزمة بعد البناء (أصلي)', true), v1: ui.check('JAR v1', true), v2: ui.check('v2', true), v3: ui.check('v3', true) };
+  function signCard() {
+    const box = h('div'); const out = ui.out(); const nn = nativeSign();
+    const draw = () => { OF.clear(box); const k = loadKey();
+      if (!nn) { box.appendChild(h('div', { class: 'msg warn' }, OF.icon('info'), h('span', { text: 'التوقيع والتحقق يعملان داخل التطبيق (APK) عبر apksig؛ غير متاحين في المتصفح. يمكنك حفظ نسخة غير موقّعة وتوقيعها بأداة خارجية.' }))); signUi.on.input.checked = false; signUi.on.input.disabled = true; }
+      box.appendChild(k ? ui.kv([['المفتاح', k.alg + ' — ' + (k.subject || '')], ['الصلاحية حتى', k.notAfter || '—'], ['SHA-256', h('span', { class: 'mono', text: k.sha256 })]]) : h('p', { class: 'muted', text: 'لا يوجد مفتاح توقيع. أنشئ مفتاحاً جديداً أو استورد نسخة احتياطية/PEM.' }));
+      const cn = ui.input({ value: 'OMNIFORGE', dir: 'ltr' }), org = ui.input({ placeholder: 'اختياري', dir: 'ltr' }), co = ui.input({ placeholder: 'SA', dir: 'ltr' }), yrs = ui.input({ type: 'number', value: 30, min: 1, max: 50 });
+      const gen = ui.btn(k ? 'أنشئ مفتاحاً جديداً (يستبدل الحالي)' : 'أنشئ مفتاحاً', async () => { out.clear(); try { if (k && !confirm('سيُستبدل المفتاح الحالي. التطبيقات الموقّعة به لن تُحدَّث بالمفتاح الجديد. تأكد أن لديك نسخة احتياطية. متابعة؟')) return; const nk = await OF.x509.generate({ cn: cn.value, org: org.value, country: co.value, years: +yrs.value }); if (!saveKey(nk)) throw new Error('تعذّر حفظ المفتاح في تخزين التطبيق'); out.ok('أُنشئ المفتاح. احفظ نسخة احتياطية الآن!'); draw(); } catch (e) { out.error(e.message); } }, { small: true });
+      box.append(ui.card('', ui.row(h('div', { class: 'grow' }, ui.field('الاسم (CN)', cn)), h('div', { class: 'grow' }, ui.field('المؤسسة', org)), h('div', { class: 'grow' }, ui.field('الدولة', co)), h('div', { class: 'grow' }, ui.field('سنوات', yrs))), gen));
+      const bk = ui.files({ accept: '.json,.pem,.key,.crt,.cer', multiple: true, label: 'استيراد: نسخة احتياطية JSON، أو ملفا PEM (مفتاح PKCS#8 + شهادة)', maxMB: 1 }); const imp = ui.btn('استورد', async () => { out.clear(); try { const fs = bk.files(); if (!fs.length) throw new Error('اختر ملفاً'); const txts = await Promise.all(fs.map(f => OF.readText(f, 'utf-8'))); let nk; if (fs.length === 1 && txts[0].trim().startsWith('{')) nk = OF.x509.fromBackup(txts[0]); else { const key = txts.find(t => /BEGIN [A-Z ]*PRIVATE KEY/.test(t)), crt = txts.find(t => /BEGIN CERTIFICATE/.test(t)); if (!key || !crt) throw new Error('اختر ملف المفتاح الخاص PEM وملف الشهادة PEM معاً'); nk = await OF.x509.importPem(key, crt); } if (!saveKey(nk)) throw new Error('تعذّر الحفظ'); out.ok('تم الاستيراد'); draw(); } catch (e) { out.error(e.message); } }, { small: true });
+      const exp = ui.btn('نسخة احتياطية (JSON)', () => { const kk = loadKey(); if (!kk) return out.warn('لا مفتاح'); OF.save(new Blob([OF.x509.toBackup(kk)], { type: 'application/json' }), 'omniforge-signing-key.json', 'application/json'); out.warn('هذا الملف يحوي مفتاحك الخاص غير مشفّر: احفظه في مكان آمن ولا تشاركه.'); }, { small: true });
+      const rm = ui.btn('حذف المفتاح', () => { if (confirm('حذف المفتاح من التطبيق؟ لن تتمكن من تحديث التطبيقات الموقّعة به دون نسخة احتياطية.')) { dropKey(); draw(); } }, { small: true, kind: 'danger' });
+      box.append(ui.card('', bk, ui.row(imp, exp, rm)));
+      if (nn) { const vb = ui.btn('تحقق من توقيع الحزمة المفتوحة', null, { small: true }); const vo = ui.out(); box.append(ui.card('', vb, vo)); ui.task(vb, vo, async t => { if (!window.__apkCur) throw new Error('افتح APK أولاً'); const ap = window.__apkCur(); let dir = null; try { dir = await OF.nat.job(); t.progress(20, 'نقل الحزمة…'); const pth = await OF.nat.stage(new Blob([ap.u8]), dir, 'check.apk', (r, tt) => t.progress(20 + r / tt * 50, 'نقل الحزمة…')); t.progress(80, 'تحقق…'); const v = await nn.verifyApk({ path: pth }); (v.verified ? vo.ok : vo.warn)(v.verified ? 'التوقيع صالح' : 'التوقيع غير صالح أو غير موجود'); vo.kv([['v1 (JAR)', v.v1 ? 'نعم' : 'لا'], ['v2', v.v2 ? 'نعم' : 'لا'], ['v3', v.v3 ? 'نعم' : 'لا'], ['صاحب الشهادة', (v.certSubjects || []).join(' | ')], ['SHA-256', (v.certSha256 || []).join(' | ')]]); (v.errors || []).length && vo.error((v.errors || []).slice(0, 5).join('\n')); (v.warnings || []).length && vo.warn((v.warnings || []).slice(0, 5).join('\n')); } finally { if (dir) OF.nat.cleanup(dir); } }); }
+    };
+    draw(); return ui.card('التوقيع', h('p', { class: 'hint', text: 'يُحفظ المفتاح في تخزين التطبيق الخاص على هذا الجهاز. الحزمة الموقّعة بمفتاح مختلف لا تحدّث التطبيق المثبّت.' }), box, ui.row(signUi.on, signUi.v1, signUi.v2, signUi.v3), out);
+  }
+
   /* ───────────── الأداة ───────────── */
   T['apk-workshop'] = {
     api: { readZip, writeZip, entryData, decodeAxml, manifestSummary, crc32 },
@@ -106,7 +132,7 @@
       box.append(ui.card('', loader, loadBtn), status);
       ui.task(loadBtn, status, async t => {
         const f = loader.first(); if (!f) throw new Error('اختر ملف APK'); t.progress(null, 'قراءة الملف…'); const u8 = new Uint8Array(await OF.readBuf(f)); const { entries, sig } = readZip(u8);
-        apk = { name: f.name, size: f.size, u8, entries, sig, mods: new Map(), summary: null, manifestXml: null }; logLines.length = 0; log('فُتح: ' + f.name + ' (' + OF.fmt.bytes(f.size) + ') — ' + entries.length + ' مدخلاً');
+        apk = { name: f.name, size: f.size, u8, entries, sig, mods: new Map(), summary: null, manifestXml: null }; window.__apkCur = () => apk; logLines.length = 0; log('فُتح: ' + f.name + ' (' + OF.fmt.bytes(f.size) + ') — ' + entries.length + ' مدخلاً');
         const hasManifest = entries.some(e => e.name === 'AndroidManifest.xml'); if (!hasManifest) status.warn('لا يوجد AndroidManifest.xml: قد لا يكون هذا APK (يعمل الباقي كأرشيف ZIP).'); else { try { const d = decodeAxml(await entryData(u8, curEntry('AndroidManifest.xml'))); apk.manifestXml = d.xml; apk.summary = manifestSummary(d.info); log('تم فك AndroidManifest: ' + apk.summary.package); } catch (e) { log('تعذّر فك المانيفست: ' + e.message); status.warn('تعذّر فك المانيفست: ' + e.message); } }
         status.ok('تم فتح الحزمة.'); refresh();
       });
@@ -158,11 +184,43 @@
             pane.append(ui.card('', h('div', { class: 'msg info' }, OF.icon('info'), h('span', { text: 'يعدّل الملفات النصية العادية داخل APK (assets وres/raw وغيرها). ملفات XML الثنائية المترجمة (layout/values/manifest) غير قابلة للتعديل هنا.' })), ui.field('بحث', q), ui.field('الملف', sel), ta, ui.btn('اعتمد التعديل', () => { out.clear(); if (!cur) return out.warn('اختر ملفاً'); apk.mods.set(cur, new TextEncoder().encode(ta.value)); log('نص معدّل: ' + cur); out.ok('اعتُمد. انتقل إلى «إعادة البناء».'); }, { kind: 'primary' })), out); };
           rerender.push(draw); draw();
         } },
+        { id: 'manifest', label: 'تعديل المانيفست', render(pane) {
+          let note = null;
+          const draw = async () => { OF.clear(pane); if (!apk) return needApk(pane);
+            if (!apk.entries.some(e => e.name === 'AndroidManifest.xml')) return pane.appendChild(ui.card('', h('p', { class: 'muted', text: 'لا يوجد AndroidManifest.xml في الحزمة.' })));
+            let d; try { d = OF.axml.parse(await getData('AndroidManifest.xml')); } catch (e) { return pane.appendChild(ui.card('', h('div', { class: 'msg error' }, OF.icon('x'), h('span', { text: 'تعذّر قراءة المانيفست للتعديل: ' + e.message })))); }
+            const X = OF.axml, man = X.elements(d, 'manifest')[0], app = X.elements(d, 'application')[0], sdk = X.elements(d, 'uses-sdk')[0]; if (!man) return pane.appendChild(ui.card('', h('p', { class: 'muted', text: 'مانيفست غير صالح (لا عنصر manifest).' })));
+            const cur = (el, n) => { if (!el) return ''; const a = X.getAttr(el, n); const v = X.attrValue(a); return v == null ? '' : String(v); };
+            const vc = ui.input({ type: 'number', value: cur(man, 'versionCode'), dir: 'ltr' }), vn = ui.input({ value: cur(man, 'versionName'), dir: 'ltr' });
+            const lblCur = app ? cur(app, 'label') : ''; const lbl = ui.input({ value: /^@0x/.test(lblCur) ? '' : lblCur, placeholder: /^@0x/.test(lblCur) ? 'الاسم الحالي مرجع لمورد (' + lblCur + ') — اكتب نصاً لاستبداله' : '' });
+            const tri = (el, n) => { const v = cur(el, n); return ui.select([['', 'بدون تغيير' + (v ? ' (الحالي: ' + (v === 'true' ? 'مفعّل' : 'معطّل') + ')' : ' (غير محدد)')], ['true', 'مفعّل'], ['false', 'معطّل']], ''); };
+            const dbg = tri(app, 'debuggable'), bak = tri(app, 'allowBackup'), clr = tri(app, 'usesCleartextTraffic');
+            const mn = ui.input({ type: 'number', value: sdk ? cur(sdk, 'minSdkVersion') : '', dir: 'ltr' }), tg = ui.input({ type: 'number', value: sdk ? cur(sdk, 'targetSdkVersion') : '', dir: 'ltr' });
+            const perms = X.elements(d, 'uses-permission'); const del = new Set(); const plist = h('div');
+            perms.forEach(e => { const nm = X.attrValue(X.getAttr(e, 'name')) || '?'; const cb = ui.check('حذف  ' + nm); cb.input.addEventListener('change', () => (cb.input.checked ? del.add(e) : del.delete(e))); plist.appendChild(cb); });
+            const addP = ui.input({ placeholder: 'android.permission.VIBRATE', dir: 'ltr', code: true }); const out = ui.out(); const btn = ui.btn('طبّق على المانيفست', null, { kind: 'primary' });
+            pane.append(ui.card('', h('div', { class: 'msg warn' }, OF.icon('info'), h('span', { text: 'ميزة تجريبية: يُعاد ترميز AndroidManifest الثنائي كاملاً. اختبر الحزمة الناتجة على جهازك بعد التوقيع. لا تغيّر اسم الحزمة هنا عمداً لأن ذلك يكسر المكوّنات ذات الأسماء النسبية.' })), ui.field('versionCode', vc), ui.field('versionName', vn), ui.field('اسم التطبيق (label) كنص', lbl), ui.field('debuggable', dbg), ui.field('allowBackup', bak), ui.field('usesCleartextTraffic', clr), ui.field('minSdkVersion', mn), ui.field('targetSdkVersion', tg)),
+              ui.card('الأذونات (' + perms.length + ')', perms.length ? plist : h('p', { class: 'muted', text: 'لا أذونات.' }), ui.field('إضافة إذن', addP)), ui.card('', btn), out);
+            if (note) { out.ok(note.t); out.kv(note.rows); note = null; }
+            ui.task(btn, out, async () => { const ch = [];
+              const setI = (el, n, input, label, min) => { if (!el || input.value === '' || String(input.value) === cur(el, n)) return; const v = Math.trunc(+input.value); if (!(v >= min)) throw new Error(label + ' غير صالح'); X.setAttr(el, n, { type: 'int', value: v }); ch.push(label + ' = ' + v); };
+              setI(man, 'versionCode', vc, 'versionCode', 1); if (vn.value !== cur(man, 'versionName') && vn.value !== '') { X.setAttr(man, 'versionName', { type: 'string', value: vn.value }); ch.push('versionName = ' + vn.value); }
+              if (app && lbl.value && lbl.value !== lblCur) { X.setAttr(app, 'label', { type: 'string', value: lbl.value }); ch.push('label = ' + lbl.value); }
+              for (const [el, n, sel] of [[app, 'debuggable', dbg], [app, 'allowBackup', bak], [app, 'usesCleartextTraffic', clr]]) if (sel.value && el) { X.setAttr(el, n, { type: 'bool', value: sel.value === 'true' }); ch.push(n + ' = ' + sel.value); }
+              if (sdk) { setI(sdk, 'minSdkVersion', mn, 'minSdkVersion', 1); setI(sdk, 'targetSdkVersion', tg, 'targetSdkVersion', 1); }
+              for (const e of del) { X.removeElement(d, e); ch.push('حذف إذن ' + X.attrValue(X.getAttr(e, 'name'))); }
+              const np = addP.value.trim(); if (np) { if (!/^[A-Za-z0-9_.]+$/.test(np)) throw new Error('اسم الإذن غير صالح'); if (perms.some(e => X.attrValue(X.getAttr(e, 'name')) === np && !del.has(e))) throw new Error('الإذن موجود مسبقاً'); const before = X.elements(d, 'application')[0] || X.elements(d).find(n => n !== man && n.name !== 'uses-permission' && n.name !== 'uses-sdk'); if (!before) throw new Error('لا نقطة إدراج مناسبة'); X.addElement(d, before, 'uses-permission', { name: { type: 'string', value: np } }); ch.push('إضافة إذن ' + np); }
+              if (!ch.length) throw new Error('لا تغييرات لتطبيقها');
+              const bytes = X.build(d); const chk = X.parse(bytes); if (X.elements(chk, 'manifest').length !== 1) throw new Error('فشل التحقق الذاتي من المانيفست الجديد');
+              apk.mods.set('AndroidManifest.xml', bytes); try { const dd = decodeAxml(bytes); apk.manifestXml = dd.xml; apk.summary = manifestSummary(dd.info); } catch (e) { /* العرض فقط */ }
+              ch.forEach(c => log('المانيفست: ' + c)); note = { t: 'عُدّل المانيفست (' + ch.length + ' تغيير). انتقل إلى «إعادة البناء والتوقيع».', rows: ch.map((c, i) => [String(i + 1), c]) }; refresh(); });
+          }; rerender.push(draw); draw();
+        } },
         { id: 'build', label: 'إعادة البناء والتوقيع', render(pane) {
           const draw = () => { OF.clear(pane); if (!apk) return needApk(pane); const out = ui.out(); const btn = ui.btn('أعد بناء APK', null, { kind: 'primary', icon: 'apk' });
             const dropSig = ui.check('إزالة التوقيع القديم (META-INF) — مطلوب لأن التعديل يبطله', true); dropSig.input.disabled = true;
             pane.append(ui.card('التعديلات المعلّقة (' + modded() + ')', modded() ? h('ul', null, [...apk.mods].slice(0, 50).map(([k, v]) => h('li', { class: 'mono', text: (v === null ? 'حذف: ' : 'تعديل: ') + k }))) : h('p', { class: 'muted', text: 'لا تعديلات. يمكنك إعادة البناء للاختبار فقط.' }), dropSig, btn),
-              h('div', { class: 'msg warn' }, OF.icon('info'), h('span', { text: 'الناتج غير موقّع، وبالتالي لن يثبّته أندرويد قبل توقيعه بمفتاحك (apksigner أو أداة توقيع على الجهاز). التوقيع داخل OMNIFORGE غير متاح حالياً — يتطلب بلاجن Native (apksig) لم يُضمَّن.' })), out);
+              signCard(), out);
             ui.task(btn, out, async t => {
               const items = []; const names = new Set(); for (const e of apk.entries) { if (e.dir && !apk.mods.has(e.name)) { items.push({ name: e.name, dir: true, raw: new Uint8Array(0), method: 0, crc: 0, csize: 0, usize: 0, time: e.time, date: e.date }); names.add(e.name); continue; } if (/^META-INF\/([^/]+\.(SF|RSA|DSA|EC)|MANIFEST\.MF)$/i.test(e.name)) continue; if (apk.mods.get(e.name) === null) continue; names.add(e.name);
                 if (apk.mods.has(e.name)) items.push({ name: e.name, data: apk.mods.get(e.name), time: e.time, date: e.date }); else items.push({ name: e.name, raw: apk.u8.subarray(e.dataOff, e.dataOff + e.csize), method: e.method, crc: e.crc, csize: e.csize, usize: e.usize, time: e.time, date: e.date }); }
@@ -170,7 +228,18 @@
               // resources.arsc أولاً بعد المانيفست غير مطلوب؛ نحافظ على الترتيب الأصلي
               t.progress(5, 'كتابة الأرشيف…'); const blob = await writeZip(items, p => t.progress(5 + p * 0.9, 'كتابة…')); log('أُعيد البناء: ' + items.length + ' مدخلاً — ' + OF.fmt.bytes(blob.size) + ' — بدون توقيع');
               const chk = readZip(new Uint8Array(await blob.arrayBuffer())); const bad = chk.entries.length !== items.length; if (bad) throw new Error('فشل التحقق الذاتي: عدد المدخلات لا يطابق'); const arsc = chk.entries.find(e => e.name === 'resources.arsc'); if (arsc && arsc.method !== 0) out.warn('resources.arsc مضغوط في الأصل؛ Android 11+ قد يرفض تثبيته.');
-              out.ok('تمت إعادة البناء والتحقق الذاتي من بنية الأرشيف (' + chk.entries.length + ' مدخلاً).'); out.add(ui.saveRow(OF.baseOf(apk.name) + '_modified_unsigned.apk', blob)); });
+              out.ok('تمت إعادة البناء والتحقق الذاتي من بنية الأرشيف (' + chk.entries.length + ' مدخلاً).');
+              if (!signUi.on.input.checked) { out.add(ui.saveRow(OF.baseOf(apk.name) + '_modified_unsigned.apk', blob)); out.warn('الناتج غير موقّع: لن يثبّته أندرويد قبل توقيعه.'); return; }
+              const nn = nativeSign(); if (!nn) throw new Error('التوقيع يتطلب التطبيق (APK) — البلاجن الأصلي غير متاح هنا. أوقف خيار التوقيع لحفظ نسخة غير موقّعة.'); const key = loadKey(); if (!key) throw new Error('لا يوجد مفتاح توقيع: أنشئ مفتاحاً أو استورده من بطاقة «التوقيع».');
+              if (!signUi.v1.input.checked && !signUi.v2.input.checked && !signUi.v3.input.checked) throw new Error('اختر نظام توقيع واحداً على الأقل');
+              let dir = null; const offP = await OF.nat.on('nativeProgress', e => { if (e.phase === 'stage') t.progress(40 + e.received / e.total * 20, 'نقل الحزمة إلى المحرك الأصلي…'); });
+              try { dir = await OF.nat.job(); t.progress(40, 'نقل الحزمة إلى المحرك الأصلي…'); const inPath = await OF.nat.stage(blob, dir, 'unsigned.apk', (r, tt) => t.progress(40 + r / tt * 20, 'نقل الحزمة… ' + OF.fmt.bytes(r)), () => t.cancelled); t.progress(65, 'محاذاة وتوقيع…');
+                const outName = OF.baseOf(apk.name) + '_signed.apk'; const r = await nn.signApk({ input: inPath, outName, key: OF.x509.b64(key.pkcs8), certs: [OF.x509.b64(key.cert)], alg: key.alg, v1: signUi.v1.input.checked, v2: signUi.v2.input.checked, v3: signUi.v3.input.checked });
+                t.progress(85, 'التحقق من التوقيع…'); const v = await nn.verifyApk({ path: r.path }); if (!v.verified) throw new Error('فشل التحقق بعد التوقيع: ' + (v.errors || []).slice(0, 3).join(' | '));
+                log('وُقّعت الحزمة: v1=' + v.v1 + ' v2=' + v.v2 + ' v3=' + v.v3 + ' — SHA-256 للشهادة ' + (v.certSha256 || [])[0]); t.progress(92, 'حفظ في التنزيلات…'); const sv = await OF.nat.saveFromPath(r.path, outName, 'application/vnd.android.package-archive', true);
+                out.ok('وُقّعت وتحققت (v1: ' + (v.v1 ? 'نعم' : 'لا') + '، v2: ' + (v.v2 ? 'نعم' : 'لا') + '، v3: ' + (v.v3 ? 'نعم' : 'لا') + ') — ' + OF.fmt.bytes(r.size)); out.kv([['المسار', sv.path || outName], ['بصمة الشهادة SHA-256', (v.certSha256 || [])[0] || ''], ['المحاذاة', r.alignedEntries + ' مدخلاً أُضيف له حشو محاذاة']]); (v.warnings || []).length && out.warn((v.warnings || []).slice(0, 3).join(' | '));
+                out.info('لتحديث تطبيق مثبّت يجب أن يطابق توقيعه توقيع النسخة المثبّتة (نفس المفتاح)، وإلا فاحذف القديم أولاً (تُحذف بياناته).');
+              } catch (e) { if (t.cancelled || OF.nat.isCancel(e)) { const er = new Error('أُلغيت العملية'); er.name = 'AbortError'; throw er; } throw new Error(e.code ? OF.nat.errorText(e) : e.message); } finally { offP(); if (dir) OF.nat.cleanup(dir); } });
           }; rerender.push(draw); draw();
         } },
         { id: 'log', label: 'السجل', render(pane) { pane.append(ui.card('سجل الخطوات', logEl, ui.copyBtn(() => logLines.join('\n')))); } },

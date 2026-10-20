@@ -1,0 +1,1 @@
+package android.os; public class StatFs { public StatFs(String p){} public long getBlockSizeLong(){return 0;} public long getBlockCountLong(){return 0;} public long getAvailableBlocksLong(){return 0;} public long getAvailableBytes(){return 0;} public long getTotalBytes(){return 0;} }

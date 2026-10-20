@@ -1,0 +1,1 @@
+package com.getcapacitor; public class Plugin { public android.content.Context getContext(){return null;} public android.app.Activity getActivity(){return null;} protected void notifyListeners(String e,JSObject d){} protected void startActivityForResult(PluginCall c,android.content.Intent i,String cb){} public void load(){} }

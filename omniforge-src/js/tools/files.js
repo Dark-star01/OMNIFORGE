@@ -90,9 +90,9 @@
       OF.clear(box);
       box.appendChild(ui.tabs([
         { id: 'open', label: 'فتح واستخراج', render(p) {
-          const f = ui.files({ accept: '.zip,.apk,.jar,.docx,.xlsx,.pptx,.epub,.cbz', label: 'اختر ملف ZIP', maxMB: 300 }); const out = ui.out(); const list = h('div'); const q = ui.input({ placeholder: 'تصفية بالاسم…' }); let zip = null, entries = [], sel = new Set();
+          const f = ui.files({ accept: '.zip,.apk,.jar,.docx,.xlsx,.pptx,.epub,.cbz,.tar,.tgz,.gz', label: 'اختر ملف ZIP أو TAR أو TAR.GZ', maxMB: 300 }); const pw = ui.input({ type: 'password', placeholder: 'كلمة المرور (للأرشيفات المحمية فقط)', dir: 'ltr' }); const out = ui.out(); const list = h('div'); const q = ui.input({ placeholder: 'تصفية بالاسم…' }); let zip = null, entries = [], sel = new Set();
           const btn = ui.btn('افتح', null, { kind: 'primary' }); const act = h('div', { class: 'row' });
-          p.append(ui.card('', f, btn), out, ui.card('المحتويات', q, list, act));
+          p.append(ui.card('', f, ui.field('كلمة المرور', pw, 'تُستخدم فقط إذا كان الأرشيف مشفّراً (ZipCrypto). لا تُحفظ ولا تُرسل لأي جهة.'), btn), out, ui.card('المحتويات', q, list, act));
           const draw = () => {
             OF.clear(list); const w = q.value.toLowerCase(); const shown = entries.filter(e => !w || e.name.toLowerCase().includes(w));
             list.appendChild(h('div', { class: 'tbl-wrap' }, h('table', { class: 'data' }, h('thead', null, h('tr', null, ['', 'الاسم', 'الحجم', ''].map(x => h('th', { text: x })))),
@@ -100,15 +100,36 @@
             if (shown.length > 500) list.appendChild(h('p', { class: 'muted small', text: 'يعرض أول 500 من ' + shown.length + ' — استخدم التصفية.' }));
           };
           q.addEventListener('input', draw);
-          ui.task(btn, out, async t => { const file = f.first(); if (!file) throw new Error('اختر ملفاً'); t.progress(null, 'قراءة الأرشيف…'); try { zip = await JSZip.loadAsync(file); } catch (e) { throw new Error(/encrypt/i.test(e.message) ? 'الأرشيف محمي بكلمة مرور (غير مدعوم)' : 'ليس أرشيف ZIP صالحاً أو أنه تالف: ' + e.message); }
-            entries = Object.values(zip.files).map(e => ({ name: e.name, dir: e.dir, size: (e._data && e._data.uncompressedSize) || 0 })); sel = new Set(); const total = entries.reduce((a, e) => a + e.size, 0); const bad = entries.filter(e => /(^|\/)\.\.(\/|$)|^\//.test(e.name)).length;
-            out.ok(entries.filter(e => !e.dir).length + ' ملف — الحجم بعد الفك ' + OF.fmt.bytes(total)); if (bad) out.warn(bad + ' مسار مشبوه (يحتوي .. أو يبدأ بـ /). لا يُكتب أي ملف بمساره؛ يُحفظ باسمه فقط.'); if (total > 2 * 1073741824) out.warn('الحجم بعد الفك كبير جداً (احتمال ZIP bomb).'); draw();
+          ui.task(btn, out, async t => { const file = f.first(); if (!file) throw new Error('اختر ملفاً'); t.progress(null, 'قراءة الأرشيف…'); const sizes = {}; let note = '';
+            const fromEntries = list_ => { const z = new JSZip(); for (const e of list_) { if (e.dir) { z.folder(e.name.replace(/\/$/, '')); continue; } if (e.data) { z.file(e.name, e.data); sizes[e.name] = e.data.length; } else if (e.skipped) note += (note ? ' | ' : '') + e.name + ' (' + e.skipped + ')'; } return z; };
+            const head = new Uint8Array(await file.slice(0, 4).arrayBuffer()); const isGz = head[0] === 0x1f && head[1] === 0x8b; const isZipSig = head[0] === 0x50 && head[1] === 0x4b;
+            if (isGz || /\.(tar|tgz)$/i.test(file.name) || (!isZipSig && !/\.(zip|apk|jar|docx|xlsx|pptx|epub|cbz)$/i.test(file.name))) {
+              let ents; try { ents = await OF.tar.open(new Uint8Array(await file.arrayBuffer())); } catch (e) { throw new Error('تعذر قراءة TAR/GZ: ' + e.message); }
+              if (isGz && !ents.length) throw new Error('الملف gzip لكنه لا يحوي أرشيف TAR (ملف مضغوط مفرد غير مدعوم هنا)'); zip = fromEntries(ents);
+            } else {
+              const bytes = new Uint8Array(await file.arrayBuffer());
+              try { zip = await JSZip.loadAsync(bytes); }
+              catch (e) {
+                if (!/encrypt/i.test(e.message)) throw new Error('ليس أرشيف ZIP صالحاً أو أنه تالف: ' + e.message);
+                if (!pw.value) throw new Error('الأرشيف محمي بكلمة مرور — أدخلها في الحقل أعلاه ثم افتح مجدداً');
+                t.progress(null, 'فك التشفير…'); let ents; try { ents = await OF.zipcrypto.extract(bytes, pw.value); } catch (x) { throw new Error(x.wrongPassword ? 'كلمة المرور خاطئة' : x.message); } zip = fromEntries(ents); note = (note ? note + ' | ' : '') + 'تم فك التشفير (ZipCrypto)';
+              }
+            }
+            entries = Object.values(zip.files).map(e => ({ name: e.name, dir: e.dir, size: (e._data && e._data.uncompressedSize) || sizes[e.name] || 0 })); sel = new Set(); const total = entries.reduce((a, e) => a + e.size, 0); const bad = entries.filter(e => /(^|\/)\.\.(\/|$)|^\//.test(e.name)).length;
+            out.ok(entries.filter(e => !e.dir).length + ' ملف — الحجم بعد الفك ' + OF.fmt.bytes(total)); if (note) out.info(note); if (bad) out.warn(bad + ' مسار مشبوه (يحتوي .. أو يبدأ بـ /). لا يُكتب أي ملف بمساره؛ يُحفظ باسمه فقط.'); if (total > 2 * 1073741824) out.warn('الحجم بعد الفك كبير جداً (احتمال ZIP bomb).'); draw();
             OF.clear(act); act.append(ui.btn('تحديد الكل', () => { entries.filter(e => !e.dir).forEach(e => sel.add(e.name)); draw(); }, { small: true }), ui.btn('إلغاء التحديد', () => { sel.clear(); draw(); }, { small: true }), ui.btn('حفظ المحدد كـ ZIP جديد', async () => { if (!sel.size) return ui.toast('حدد ملفات أولاً', 'error'); const nz = new JSZip(); for (const n of sel) nz.file(n, zip.file(n).async('uint8array')); out.add(ui.saveRow('selected.zip', await nz.generateAsync({ type: 'blob', compression: 'DEFLATE' }))); }, { small: true, kind: 'primary' })); });
         } },
-        { id: 'create', label: 'إنشاء ZIP', render(p) {
-          const f = ui.files({ multiple: true, label: 'اختر الملفات', maxMB: 300 }); const name = ui.input({ value: 'archive.zip', dir: 'ltr' }); const lvl = ui.select([['DEFLATE', 'ضغط (أبطأ، أصغر)'], ['STORE', 'بدون ضغط (أسرع)']], 'DEFLATE'); const out = ui.out(); const btn = ui.btn('أنشئ ZIP', null, { kind: 'primary' });
-          p.append(ui.card('', f, ui.field('اسم الملف', name), ui.field('الضغط', lvl), btn), out);
-          ui.task(btn, out, async t => { const fs = f.files(); if (!fs.length) throw new Error('اختر ملفاً واحداً على الأقل'); const z = new JSZip(); const used = new Set(); fs.forEach(x => { let n = x.webkitRelativePath || x.name, k = 1; const base = n; while (used.has(n)) n = base.replace(/(\.[^.]*)?$/, ' (' + k++ + ')$1'); used.add(n); z.file(n, x); }); const blob = await z.generateAsync({ type: 'blob', compression: lvl.value, compressionOptions: { level: 6 } }, m => t.progress(m.percent, m.currentFile || '')); out.ok('تم إنشاء الأرشيف (' + fs.length + ' ملف)'); out.add(ui.saveRow(/\.zip$/i.test(name.value) ? name.value : name.value + '.zip', blob)); }, { cancelable: false });
+        { id: 'create', label: 'إنشاء أرشيف', render(p) {
+          const f = ui.files({ multiple: true, label: 'اختر الملفات', maxMB: 300 }); const name = ui.input({ value: 'archive.zip', dir: 'ltr' }); const lvl = ui.select([['DEFLATE', 'ضغط (أبطأ، أصغر)'], ['STORE', 'بدون ضغط (أسرع)']], 'DEFLATE'); const kind = ui.select([['zip', 'ZIP'], ['zipenc', 'ZIP بكلمة مرور (ZipCrypto — حماية خفيفة)'], ['tar', 'TAR'], ['tgz', 'TAR.GZ']], 'zip'); const cpw = ui.input({ type: 'password', placeholder: 'كلمة المرور', dir: 'ltr' }); const out = ui.out(); const btn = ui.btn('أنشئ الأرشيف', null, { kind: 'primary' });
+          kind.addEventListener('change', () => { const ext = { zip: '.zip', zipenc: '.zip', tar: '.tar', tgz: '.tar.gz' }[kind.value]; name.value = name.value.replace(/\.(zip|tar\.gz|tgz|tar)$/i, '') + ext; });
+          p.append(ui.card('', f, ui.field('النوع', kind), ui.field('كلمة المرور', cpw, 'لنوع ZIP المشفّر فقط. ZipCrypto تشفير قديم وضعيف؛ لا تعتمد عليه لحماية بيانات حساسة.'), ui.field('اسم الملف', name), ui.field('الضغط (ZIP)', lvl), btn), out);
+          ui.task(btn, out, async t => { const fs = f.files(); if (!fs.length) throw new Error('اختر ملفاً واحداً على الأقل'); const used = new Set(); const names = fs.map(x => { let n = x.webkitRelativePath || x.name, k = 1; const base = n; while (used.has(n)) n = base.replace(/(\.[^.]*)?$/, ' (' + k++ + ')$1'); used.add(n); return n; });
+            let blob, fname = name.value.trim() || 'archive.zip';
+            if (kind.value === 'zip') { const z = new JSZip(); fs.forEach((x, i) => z.file(names[i], x)); blob = await z.generateAsync({ type: 'blob', compression: lvl.value, compressionOptions: { level: 6 } }, m => t.progress(m.percent, m.currentFile || '')); if (!/\.zip$/i.test(fname)) fname += '.zip'; }
+            else { let total = 0; const ents = []; for (let i = 0; i < fs.length; i++) { t.progress(i / fs.length * 60, 'قراءة ' + names[i]); const data = new Uint8Array(await fs[i].arrayBuffer()); total += data.length; if (total > 1.5 * 1073741824) throw new Error('الحجم الإجمالي كبير لهذا النوع (حد 1.5GB في الذاكرة)'); ents.push({ name: names[i], data, mtime: Math.floor((fs[i].lastModified || Date.now()) / 1000) }); await OF.tick(); }
+              if (kind.value === 'zipenc') { if (!cpw.value) throw new Error('أدخل كلمة مرور'); t.progress(70, 'تشفير…'); blob = new Blob([await OF.zipcrypto.create(ents, cpw.value)], { type: 'application/zip' }); if (!/\.zip$/i.test(fname)) fname += '.zip'; }
+              else { t.progress(70, 'بناء TAR…'); let u = OF.tar.build(ents); if (kind.value === 'tgz') { t.progress(85, 'ضغط gzip…'); u = await OF.tar.gzip(u); if (!/\.(tar\.gz|tgz)$/i.test(fname)) fname += '.tar.gz'; } else if (!/\.tar$/i.test(fname)) fname += '.tar'; blob = new Blob([u], { type: kind.value === 'tgz' ? 'application/gzip' : 'application/x-tar' }); } }
+            out.ok('تم إنشاء الأرشيف (' + fs.length + ' ملف) — ' + OF.fmt.bytes(blob.size)); out.add(ui.saveRow(fname, blob)); }, { cancelable: false });
         } },
       ]));
     },

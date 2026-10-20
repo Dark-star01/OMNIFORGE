@@ -1,0 +1,17 @@
+'use strict';
+const fs=require('fs'),path=require('path'),cp=require('child_process'),a=require('assert');
+const SRC=process.env.APP_SRC||path.resolve(__dirname,'../omniforge-src');const Z=require(path.join(SRC,'js/zipcrypto.js'));
+const tmp=fs.mkdtempSync('/tmp/claude-0/zc-');const tests=[];const t=(n,f)=>tests.push([n,f]);
+const sh=c=>{const r=cp.spawnSync('bash',['-c',c],{encoding:'utf8'});if(r.status)throw new Error(c+': '+r.stderr);return r.stdout};
+fs.mkdirSync(tmp+'/s/sub',{recursive:true});fs.writeFileSync(tmp+'/s/a.txt','hello world '.repeat(200));fs.writeFileSync(tmp+'/s/عربي.txt','مرحبا');fs.writeFileSync(tmp+'/s/sub/b.bin',Buffer.alloc(5000,5));fs.writeFileSync(tmp+'/s/empty','');
+t('فك ZIP أنشأه zip -P',async()=>{sh(`cd ${tmp}/s && zip -q -r -P "كلمة123" ../e.zip .`);const E=await Z.extract(new Uint8Array(fs.readFileSync(tmp+'/e.zip')),'كلمة123');const m=Object.fromEntries(E.filter(x=>!x.dir).map(x=>[x.name,x]));a.strictEqual(Buffer.from(m['a.txt'].data).toString(),'hello world '.repeat(200));a.strictEqual(Buffer.from(m['عربي.txt'].data).toString(),'مرحبا');a.strictEqual(m['sub/b.bin'].data.length,5000);a.strictEqual(m['empty'].data.length,0)});
+t('كلمة مرور خاطئة',async()=>{let e;try{await Z.extract(new Uint8Array(fs.readFileSync(tmp+'/e.zip')),'غلط')}catch(x){e=x}a(e&&e.wrongPassword)});
+t('بدون كلمة مرور',async()=>{await a.rejects(Z.extract(new Uint8Array(fs.readFileSync(tmp+'/e.zip')),''),/كلمة مرور/)});
+t('isEncrypted',()=>{a(Z.isEncrypted(new Uint8Array(fs.readFileSync(tmp+'/e.zip'))));sh(`cd ${tmp}/s && zip -q -r ../p.zip .`);a(!Z.isEncrypted(new Uint8Array(fs.readFileSync(tmp+'/p.zip'))))});
+t('إنشاء ZIP مشفّر يفتحه unzip',async()=>{const ents=[{name:'d/',data:null},{name:'d/x.txt',data:new TextEncoder().encode('abc'.repeat(500))},{name:'ملف.txt',data:new TextEncoder().encode('نص')}];fs.writeFileSync(tmp+'/c.zip',await Z.create(ents,'pw 1'));
+ sh(`cd ${tmp} && unzip -tq -P 'pw 1' c.zip`);sh(`mkdir -p ${tmp}/o && cd ${tmp}/o && unzip -q -P 'pw 1' ../c.zip`);a.strictEqual(fs.readFileSync(tmp+'/o/d/x.txt','utf8'),'abc'.repeat(500));a.strictEqual(fs.readFileSync(tmp+'/o/ملف.txt','utf8'),'نص');let bad=false;try{sh(`cd ${tmp} && unzip -tq -P wrong c.zip`)}catch(e){bad=true}a(bad,'كلمة خاطئة يجب أن تفشل في unzip')});
+t('إنشاء بدون كلمة مرور صالح',async()=>{fs.writeFileSync(tmp+'/n.zip',await Z.create([{name:'a',data:new Uint8Array(100).fill(1)}],''));sh(`unzip -tq ${tmp}/n.zip`)});
+t('ذهاب وإياب بالمكتبة نفسها',async()=>{const d=new Uint8Array(100000);for(let i=0;i<d.length;i++)d[i]=(i*31)&255;const z=await Z.create([{name:'r.bin',data:d}],'k');const E=await Z.extract(z,'k');a.deepStrictEqual(Buffer.from(E[0].data),Buffer.from(d))});
+t('AES يُرفض برسالة واضحة',async()=>{const z=await Z.create([{name:'a',data:new Uint8Array(10)}],'k');const v=new DataView(z.buffer);v.setUint16(8,99,true);const cdo=v.getUint32(z.length-22+16,true);v.setUint16(cdo+10,99,true);await a.rejects(Z.extract(z,'k'),/AES/)});
+t('أرشيف تالف',async()=>{await a.rejects(Z.extract(new Uint8Array(50),'k'),/ZIP/)});
+(async()=>{let p=0,f=0;for(const [n,fn] of tests){try{await fn();p++;console.log('  ✓',n)}catch(e){f++;console.log('  ✗',n,String(e.message).split('\n')[0])}}console.log(`\n${p} نجح، ${f} فشل`);process.exit(f?1:0)})();

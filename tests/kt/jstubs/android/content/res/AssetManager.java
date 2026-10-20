@@ -1,0 +1,1 @@
+package android.content.res; public abstract class AssetManager { public abstract java.io.InputStream open(String n) throws java.io.IOException; public abstract String[] list(String p) throws java.io.IOException; public abstract AssetFileDescriptor openFd(String n) throws java.io.IOException; }

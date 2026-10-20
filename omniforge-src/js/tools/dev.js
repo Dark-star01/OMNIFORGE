@@ -75,7 +75,7 @@
   /* ───────────── ورشة البيانات المنظمة ───────────── */
   T['data-workshop'] = {
     render(box) {
-      const fmts = ['JSON', 'YAML', 'XML', 'CSV'];
+      const fmts = ['JSON', 'YAML', 'XML', 'CSV', 'TOML'];
       const src = ui.select(fmts, 'JSON'), dst = ui.select(fmts, 'YAML'), ind = ui.select([['2', 'مسافتان'], ['4', '4 مسافات'], ['tab', 'Tab']], '2');
       const inp = ui.area({ rows: 10, code: true, placeholder: 'ألصق البيانات هنا…' }); const outp = ui.area({ rows: 10, code: true, readonly: true }); const out = ui.out();
       const sk = ui.check('ترتيب المفاتيح أبجدياً');
@@ -84,6 +84,7 @@
         switch (src.value) {
           case 'JSON': try { return JSON.parse(s); } catch (e) { throw new Error('JSON غير صالح: ' + jsonErr(e, s)); }
           case 'YAML': try { return jsyaml.safeLoad(s); } catch (e) { throw new Error('YAML غير صالح: ' + e.message.split('\n')[0]); }
+          case 'TOML': try { return OF.toml.parse(s); } catch (e) { throw new Error('TOML غير صالح: ' + e.message); }
           case 'XML': { const d = parseXml(s); return { [d.documentElement.nodeName]: xmlToObj(d.documentElement) }; }
           case 'CSV': { const rows = csv.parse(s, csv.detect(s)); if (rows.length < 1) throw new Error('CSV فارغ'); const hd = rows[0]; return rows.slice(1).map(r => Object.fromEntries(hd.map((k, i) => [k || 'col' + (i + 1), r[i] == null ? '' : r[i]]))); }
         }
@@ -95,6 +96,7 @@
           case 'JSON': return JSON.stringify(v, null, stepStr());
           case 'MIN': return JSON.stringify(v);
           case 'YAML': return jsyaml.safeDump(v, { indent: ind.value === '4' ? 4 : 2, lineWidth: -1, noRefs: true });
+          case 'TOML': return OF.toml.stringify(v);
           case 'XML': { const keys = v && typeof v === 'object' && !Array.isArray(v) ? Object.keys(v) : []; const body = keys.length === 1 ? objToXml(keys[0], v[keys[0]], '', stepStr()) : objToXml('root', Array.isArray(v) ? { item: v } : v, '', stepStr()); return '<?xml version="1.0" encoding="UTF-8"?>\n' + body.trim(); }
           case 'CSV': {
             if (!Array.isArray(v)) { if (v && typeof v === 'object') v = [v]; else throw new Error('CSV يحتاج مصفوفة من الكائنات'); }
@@ -285,13 +287,13 @@
   }
   T['code-formatter'] = {
     render(box) {
-      const lang = ui.select(['JSON', 'CSS', 'HTML']); const ind = ui.select([['2', 'مسافتان'], ['4', '4 مسافات'], ['tab', 'Tab']], '2'); const inp = ui.area({ rows: 10, code: true, placeholder: 'الكود…' }); const outp = ui.area({ rows: 10, code: true, readonly: true }); const out = ui.out();
+      const lang = ui.select(['JSON', 'CSS', 'HTML', 'JavaScript']); const ind = ui.select([['2', 'مسافتان'], ['4', '4 مسافات'], ['tab', 'Tab']], '2'); const inp = ui.area({ rows: 10, code: true, placeholder: 'الكود…' }); const outp = ui.area({ rows: 10, code: true, readonly: true }); const out = ui.out();
       const step = () => (ind.value === 'tab' ? '\t' : ' '.repeat(+ind.value));
       const act = mode => () => {
         out.clear(); outp.value = ''; const s = inp.value; if (!s.trim()) return out.warn('أدخل كوداً أولاً');
         try {
           let r; if (lang.value === 'JSON') { let v; try { v = JSON.parse(s); } catch (e) { throw new Error('JSON غير صالح: ' + jsonErr(e, s)); } r = mode === 'f' ? JSON.stringify(v, null, step()) : JSON.stringify(v); }
-          else if (lang.value === 'CSS') r = mode === 'f' ? fmtCss(s, step()) : minCss(s); else r = mode === 'f' ? fmtHtml(s, step()) : minHtml(s);
+          else if (lang.value === 'CSS') r = mode === 'f' ? fmtCss(s, step()) : minCss(s); else if (lang.value === 'JavaScript') { try { r = mode === 'f' ? OF.jsfmt.beautify(s, step()) : OF.jsfmt.minify(s); } catch (e) { throw new Error('كود JavaScript غير صالح: ' + e.message); } } else r = mode === 'f' ? fmtHtml(s, step()) : minHtml(s);
           outp.value = r; out.ok((mode === 'f' ? 'تم التنسيق' : 'تم التصغير') + ' — ' + s.length + ' ← ' + r.length + ' حرفاً');
         } catch (e) { out.error(e.message); }
       };

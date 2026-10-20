@@ -1,0 +1,27 @@
+'use strict';
+const path=require('path'),a=require('assert');
+const T=require(path.resolve(process.env.APP_SRC||path.join(__dirname,'../omniforge-src'),'js/toml.js'));
+let p=0,f=0;const t=(n,fn)=>{try{fn();p++;console.log('  ✓',n)}catch(e){f++;console.log('  ✗',n,e.message.split('\n')[0])}};
+const P=T.parse,S=T.stringify;
+t('أساسي',()=>a.deepStrictEqual(P('a=1\nb="x"\nc=true\nd=1.5\ne=[1,2,3]\n# c\n'),{a:1,b:'x',c:true,d:1.5,e:[1,2,3]}));
+t('جداول وتداخل',()=>a.deepStrictEqual(P('[a]\nx=1\n[a.b]\ny=2\n[c.d]\nz=3'),{a:{x:1,b:{y:2}},c:{d:{z:3}}}));
+t('مفاتيح منقّطة ومقتبسة',()=>a.deepStrictEqual(P('a.b.c=1\n"k y"=2\n\'l\'=3'),{a:{b:{c:1}},'k y':2,l:3}));
+t('جدول مصفوفة',()=>a.deepStrictEqual(P('[[p]]\nn="a"\n[[p]]\nn="b"\n[p.sub]\nq=1'),{p:[{n:'a'},{n:'b',sub:{q:1}}]}));
+t('جدول مضمّن',()=>a.deepStrictEqual(P('t={a=1,b={c=2}}'),{t:{a:1,b:{c:2}}}));
+t('نصوص متعددة الأسطر',()=>{a.strictEqual(P('s="""\nأ\nب"""').s,'أ\nب');a.strictEqual(P("s='''\nx\\n'''").s,'x\\n');a.strictEqual(P('s="""a \\\n   b"""').s,'a b');});
+t('هروب',()=>a.strictEqual(P('s="\\u0041\\t\\"\\\\"').s,'A\t"\\'));
+t('أعداد',()=>a.deepStrictEqual(P('a=0xFF\nb=0o17\nc=0b101\nd=1_000\ne=-5\nf=1e3\ng=inf\nh=-inf\ni=+3.14'),{a:255,b:15,c:5,d:1000,e:-5,f:1000,g:Infinity,h:-Infinity,i:3.14}));
+t('nan',()=>a(Number.isNaN(P('a=nan').a)));
+t('تواريخ كنصوص',()=>a.deepStrictEqual(P('a=1979-05-27T07:32:00Z\nb=1979-05-27\nc=07:32:00\nd=1979-05-27 07:32:00'),{a:'1979-05-27T07:32:00Z',b:'1979-05-27',c:'07:32:00',d:'1979-05-27T07:32:00'}));
+t('مصفوفة متعددة الأسطر وتعليقات',()=>a.deepStrictEqual(P('a=[\n 1, # x\n 2,\n]\n'),{a:[1,2]}));
+t('CRLF',()=>a.deepStrictEqual(P('a=1\r\n[t]\r\nb=2\r\n'),{a:1,t:{b:2}}));
+for(const [n,s] of Object.entries({'مفتاح مكرر':'a=1\na=2','جدول مكرر':'[a]\n[a]','قيمة مفقودة':'a=','نص غير مغلق':'a="x','بعد القيمة':'a=1 b=2','تعارض':'a=1\n[a]','inline توسيع':'t={a=1}\n[t.b]','صفر بادئ':'a=01','عدد كبير':'a=99999999999999999999'}))
+  t('خطأ: '+n,()=>a.throws(()=>P(s),/السطر|TOML/));
+t('تسلسل أساسي',()=>a.strictEqual(S({a:1,b:'x',c:[1,2],t:{d:true}}),'a = 1\nb = "x"\nc = [1, 2]\n\n[t]\nd = true\n'));
+t('تسلسل مصفوفة جداول',()=>a.strictEqual(S({p:[{n:'a'},{n:'b'}]}),'[[p]]\nn = "a"\n\n[[p]]\nn = "b"\n'));
+t('تسلسل مفاتيح تحتاج اقتباس',()=>a.strictEqual(S({'k y':1}),'"k y" = 1\n'));
+t('تسلسل null يرمي',()=>a.throws(()=>S({a:null}),/null/));
+t('تسلسل عشري صحيح عدداً عشرياً',()=>a.strictEqual(S({a:1.5,b:1e21}),'a = 1.5\nb = 1e+21\n'));
+t('ذهاب وإياب',()=>{const o={title:'ت',arr:[1,'a',[2,3]],t:{x:{y:[{a:1},{a:2}]},s:'q"\\\n'},n:-0.5};a.deepStrictEqual(P(S(o)),o);});
+t('جدول مصفوفة فارغ داخل مضمّن',()=>a.deepStrictEqual(P('a=[{x=1},{x=2}]'),{a:[{x:1},{x:2}]}));
+console.log(`\n${p} نجح، ${f} فشل`);process.exit(f?1:0);

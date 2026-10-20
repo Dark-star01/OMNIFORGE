@@ -1,0 +1,7 @@
+{
+  "name": "omni-ocr",
+  "version": "1.0.0",
+  "description": "OMNIFORGE: استخراج النص من الصور (OCR) عربي/إنجليزي عبر Tesseract4Android بلا إنترنت — النماذج تُنزَّل في CI داخل assets_inject/tessdata",
+  "files": ["android/"],
+  "capacitor": { "android": { "src": "android" } }
+}

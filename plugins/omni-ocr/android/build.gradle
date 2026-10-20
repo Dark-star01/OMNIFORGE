@@ -1,0 +1,34 @@
+// وحدة مكتبة أندرويد للبلاجن. AGP و Kotlin يضيفهما APKMaker في build.gradle الجذر.
+apply plugin: 'com.android.library'
+apply plugin: 'org.jetbrains.kotlin.android'
+
+// Tesseract4Android منشور على JitPack (وليس Maven Central) حسب README المشروع.
+repositories {
+    google()
+    mavenCentral()
+    maven { url 'https://jitpack.io' }
+}
+
+android {
+    namespace "com.dark.omniocr"
+    compileSdk rootProject.ext.compileSdkVersion
+    defaultConfig {
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode 1
+        versionName "1.0"
+    }
+    compileOptions {
+        sourceCompatibility rootProject.ext.darkJava
+        targetCompatibility rootProject.ext.darkJava
+    }
+    kotlinOptions {
+        jvmTarget = rootProject.ext.darkJava.toString()
+    }
+}
+
+dependencies {
+    implementation project(':capacitor-android')
+    // Tesseract 5.5.1 (Apache-2.0)، نسخة أحادية الخيط (أصغر). minSdk 21.
+    implementation "cz.adaptech.tesseract4android:tesseract4android:4.9.0"
+}
