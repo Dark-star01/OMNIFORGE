@@ -1,4 +1,10 @@
 // تعديلات app/build.gradle لمحرك الفيديو (yt-dlp/Python/FFmpeg). تُدمج دمجاً ذكياً (إضافة فقط) عبر native.py files.
+// Tesseract4Android (تبعية omni-ocr المتعدّية) منشور على JitPack فقط. تبعيات مشاريع البلاجن تُحلّ
+// بمستودعات وحدة app نفسها، لذا لازم JitPack هنا (وليس فقط داخل plugins/omni-ocr/android/build.gradle).
+repositories {
+    maven { url 'https://jitpack.io' }
+}
+
 android {
     defaultConfig {
         // المحرك ملفات .so ثقيلة لكل معمارية؛ نكتفي بمعماريات الهواتف الفعلية (أصغر حجماً):
