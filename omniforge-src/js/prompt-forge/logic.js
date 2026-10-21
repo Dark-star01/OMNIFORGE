@@ -29,7 +29,7 @@
   /* رسالة المستخدم. بعض النماذج (Qwen3) تُفعّل وضع التفكير افتراضياً؛ المحرك يطلب تعطيله عبر profile.noThink. */
   L.buildUser = function (idea, type, profile) {
     const head = type === 'video' ? 'Create a video generation prompt for this idea:' : 'Create an image generation prompt for this idea:';
-    return head + '\n' + String(idea).trim() + (profile && profile.noThink ? '\n/no_think' : '');
+    return head + '\n' + String(idea).trim() + (profile && profile.noThink && profile.thinkControl !== 'prefix' ? '\n/no_think' : '');
   };
 
   /* ───────── الناتج ───────── */
@@ -147,11 +147,12 @@
     const cnt = await o.engine.countTokens(system + '\n' + user);
     const info = o.engine.info(); const budget = L.contextBudget(cnt.tokens, maxTokens, info.ctx);
     if (!budget.ok) throw fail('CONTEXT_OVERFLOW', 'الفكرة والتعليمات أكبر من نافذة السياق: تحتاج ≈ ' + budget.needed + ' رمزاً (' + cnt.tokens + ' للإدخال + ' + maxTokens + ' محجوزة للتوليد) والمتاح ' + budget.ctx + '. اختصر الفكرة أو قلّل التعليمات.', { budget, tokens: cnt });
+    if (o.isCancelled && o.isCancelled()) throw fail('CANCELLED', 'Generation cancelled.');
     stage('generate');
     const g = await o.engine.generate({ system, user, type, preset, idea, variant: o.variant || 0, maxTokens, temperature: o.temperature });
     stage('quality');
     const p = L.parseOutput(g.text);
-    const stats = { characters: 0, promptTokens: g.promptTokens != null ? g.promptTokens : cnt.tokens, generatedTokens: g.generatedTokens, tokensExact: !!(cnt.exact && g.exact !== false && g.promptTokens != null), ms: g.ms, ctx: info.ctx || null, truncated: !!g.truncated, budget };
+    const stats = { characters: 0, promptTokens: g.promptTokens != null ? g.promptTokens : cnt.tokens, generatedTokens: g.generatedTokens, tokensExact: !!(cnt.exact && g.exact !== false && g.promptTokens != null), ms: g.ms, promptMs: g.promptMs != null ? g.promptMs : null, genMs: g.genMs != null ? g.genMs : null, tokensPerSec: g.tokensPerSec != null ? g.tokensPerSec : null, cachedTokens: g.cachedTokens != null ? g.cachedTokens : null, ctx: info.ctx || null, truncated: !!g.truncated, budget };
     if (p.kind === 'empty') throw fail('EMPTY_OUTPUT', 'لم يُنتج النموذج أي نص');
     if (p.kind === 'refused') return { kind: 'refused', reason: p.reason || 'تعذّر تنفيذ الطلب.', source: 'model', type, mode: o.engine.kind, stats };
     if (p.kind === 'clarify') return { kind: 'clarify', question: p.question, type, mode: o.engine.kind, stats };

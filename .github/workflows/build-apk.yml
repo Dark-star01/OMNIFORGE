@@ -265,6 +265,19 @@ jobs:
             echo "⏭️ لا يوجد hooks/pre-build.sh — تخطي"
           fi
 
+      # omni-llm (llama.cpp عبر CMake/NDK): تثبيت NDK وCMake بالإصدارات التي يطلبها plugins/omni-llm/android/build.gradle.
+      # المصدر (llama.cpp v0.7.0) يُجلب أثناء Gradle عبر CMake FetchContent (يحتاج git وإنترنت — متاحان في runner).
+      - name: 🧰 تجهيز NDK وCMake (omni-llm)
+        id: ndk
+        run: |
+          if [ ! -d plugins/omni-llm ]; then echo "⏭️ لا يوجد plugins/omni-llm — تخطي"; exit 0; fi
+          SDKM="${ANDROID_HOME:-$ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKM" ]; then SDKM=$(command -v sdkmanager || true); fi
+          if [ -z "$SDKM" ]; then echo "❌ sdkmanager غير موجود"; exit 1; fi
+          yes | "$SDKM" --licenses >/dev/null 2>&1 || true
+          "$SDKM" --install "ndk;27.2.12479018" "cmake;3.22.1"
+          echo "✅ NDK 27.2.12479018 + CMake 3.22.1"
+
       # ════════════════ 6) المزامنة والبناء ════════════════
       - name: 🔄 مزامنة الملفات
         id: sync
@@ -354,7 +367,8 @@ jobs:
             native_kotlin) HINT="تعذر دمج إعدادات Kotlin في gradle" ;;
             native_compose) HINT="تعذر دمج إعدادات Compose في gradle" ;;
             plugins) HINT="بلاجن في plugins/ غير صالح (راجع package.json)" ;;
-            gradle) HINT="فشل بناء Gradle (غالباً خطأ في كود Kotlin أو مكتبة)" ;;
+            ndk) HINT="تعذّر تثبيت NDK/CMake لبلاجن omni-llm (sdkmanager)" ;;
+            gradle) HINT="فشل بناء Gradle (غالباً خطأ في كود Kotlin أو مكتبة، أو في ترجمة C++ لـomni-llm: راجع أسطر CMake/ninja في build_logs/gradle.log)" ;;
             *) HINT="راجع لوق الخطوة الفاشلة" ;;
           esac
           {

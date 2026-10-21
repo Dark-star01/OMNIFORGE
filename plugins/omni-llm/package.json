@@ -1,0 +1,7 @@
+{
+  "name": "omni-llm",
+  "version": "1.0.0",
+  "description": "OMNIFORGE: محرك ذكاء اصطناعي محلي (llama.cpp + GGUF) لأداة Prompt Forge. ملف النموذج خارجي ولا يُضمَّن في APK. المصدر يُجلب وقت البناء من GitHub (وسم مثبّت).",
+  "files": ["android/"],
+  "capacitor": { "android": { "src": "android" } }
+}

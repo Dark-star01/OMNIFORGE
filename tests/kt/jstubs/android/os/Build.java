@@ -1,1 +1,1 @@
-package android.os; public class Build { public static class VERSION { public static final int SDK_INT=34; } public static class VERSION_CODES { public static final int N=24,Q=29,R=30; } }
+package android.os; public class Build { public static final String[] SUPPORTED_ABIS = new String[]{"arm64-v8a"}; public static class VERSION { public static final int SDK_INT=34; } public static class VERSION_CODES { public static final int N=24,Q=29,R=30; } }

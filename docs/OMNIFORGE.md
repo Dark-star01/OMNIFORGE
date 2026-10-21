@@ -11,7 +11,8 @@
 | `plugins/omni-native/` | بلاجن Kotlin: تنزيل قابل للاستئناف (Range)، فحص TCP/DNS، مساحة التخزين، اختيار/مسح مجلد (SAF)، نقل الملفات إلى مجلد العمل، **توقيع APK والتحقق منه (apksig 8.7.3)** — **لم يُجمَّع مقابل المكتبات الحقيقية ولم يُختبر على جهاز** |
 | `plugins/omni-media/` | بلاجن Kotlin يشغّل FFmpeg المضمّن (نفس ثنائي omni-video، بلا مكتبة إضافية) لقص/تحويل/ضغط/دمج MP4 بتحقق صارم من الوسائط (`FfArgs`) — **لم يُجرَّب على جهاز** |
 | `plugins/omni-ocr/` | بلاجن Kotlin لـ OCR عربي/إنجليزي بـ Tesseract4Android 4.9.0 (**من JitPack**؛ إن تعذّر حلّها فاحذف المجلد). النماذج tessdata_fast تُنزَّل في `hooks/pre-build.sh` إلى `assets_inject/tessdata` — **لم يُجمَّع ولم يُجرَّب** |
-| `omniforge-src/js/prompt-forge/` + `config/prompt-forge/` | أداة Prompt Forge (بناء Prompt للصور/الفيديو): منطق + طبقة نموذج + تعليمات وPresets JSON. وضع **Mock** فقط حالياً؛ Qwen3-0.6B-GGUF (Local AI) غير مدمج — انظر `docs/PROMPT_FORGE.md` |
+| `plugins/omni-llm/` | بلاجن C++/JNI/Kotlin فوق llama.cpp v0.7.0 لتشغيل GGUF محلياً (Prompt Forge). **مُختبَر على Linux (53 اختبار C++ + ASan + 17 JNI)؛ لم يُبنَ ضمن APK ولم يُجرَّب على جهاز** — `arm64-v8a` فقط |
+| `omniforge-src/js/prompt-forge/` + `config/prompt-forge/` | أداة Prompt Forge (بناء Prompt للصور/الفيديو): منطق + طبقة نموذج + تعليمات وPresets JSON. Local AI عبر بلاجن `omni-llm` (llama.cpp + GGUF خارجي، Qwen3-0.6B افتراضي)؛ Mock وضع اختبار صريح — انظر `docs/PROMPT_FORGE.md` |
 | `native/android/app/build.gradle` | `abiFilters` (arm64-v8a, armeabi-v7a) + `useLegacyPackaging` لمحرك الفيديو |
 | `hooks/` | `pre-build.sh` يرفع minSdk إلى 24 وينزّل نماذج OCR (غير حرج)؛ `post-build.sh` يسجّل حجم APK لكل معمارية |
 | `config.json` | اسم التطبيق وهويته وألوان السبلاش |
@@ -30,7 +31,7 @@
 
 ## الحالات (45 أداة)
 - **ready (30)**: pdf-workshop, archive-manager (ZIP/TAR/TGZ + ZIP مشفّر ZipCrypto), mhtml-workshop, file-audit, file-split-join, image-workshop, color-studio, svg-workshop, gif-studio (مع تفكيك GIF), subtitle-workshop (SRT/VTT/ASS), text-workshop, text-diff, encoder-studio, markdown-workshop, snippets, data-workshop (مع TOML), table-workshop, regex-lab, test-data, jwt-inspector, url-workshop, html-playground, secure-generator, hash-studio, metadata-cleaner, encryptor, unit-converter, datetime-workshop, calculator, code-formatter (CSS/HTML/JSON/JS)
-- **partial (13)**: prompt-forge (Mock فقط؛ لا محرك محلي مدمج), video-link-downloader, video-workshop (MP4 عبر FFmpeg داخل APK + WebM في المتصفح), audio-workshop (WAV فقط), apk-workshop (تعديل مانيفست تجريبي + توقيع apksig), ocr-extractor (صور فقط، APK فقط), api-lab, network-tools (TCP/DNS محلي داخل APK), downloader (استئناف داخل APK), storage-analyzer (مسح مجلد أصلي داخل APK), redactor, qr-studio, font-inspector
+- **partial (13)**: prompt-forge (بلاجن omni-llm مُختبَر على Linux فقط؛ لم يُبنَ APK ولم يُجرَّب Qwen3 على جهاز), video-link-downloader, video-workshop (MP4 عبر FFmpeg داخل APK + WebM في المتصفح), audio-workshop (WAV فقط), apk-workshop (تعديل مانيفست تجريبي + توقيع apksig), ocr-extractor (صور فقط، APK فقط), api-lab, network-tools (TCP/DNS محلي داخل APK), downloader (استئناف داخل APK), storage-analyzer (مسح مجلد أصلي داخل APK), redactor, qr-studio, font-inspector
 - **requires-service (0)**
 - **unavailable (2)**: doc-converter, speech-tools (مؤجَّلان عمداً — راجع «ما أُجِّل عمداً»)
 - كل أداة `partial` تعتمد على جزء أصلي **لم يُجرَّب على جهاز**؛ لذلك لم تُوسَم `ready` مهما اجتازت اختبارات المحاكاة.
@@ -83,6 +84,7 @@
 - الاختبارات: `node tests/video-core.test.js` (وحدة، 75 حالة) و`node tests/video-ui.test.js` (Chromium بمحرك وهمي، 27 سيناريو). **لا تغطي Kotlin ولا yt-dlp ولا أندرويد.**
 
 ## الاختبارات (تشغيل)
+- النواة C++/JNI لـOmniLlm على Linux: `tests/omnillm/run.sh` (انظر docs/PROMPT_FORGE.md).
 - Node: `node tests/<name>.test.js` لـ promptforge (منطق Prompt Forge + طبقة النموذج)، toml, tar, zipcrypto, gifdec, ffcmd, axml (يحتاج python3)، x509 (يحتاج openssl/java)، jsfmt, video-core.
 - Chromium (خادم ساكن على 8765 لمجلد التطبيق، `BASE` لتغييره): `promptforge-ui`, `small-ui`, `video-ui`, `apk-ui`, `video-ff-ui`, `ocr-ui`, `native-ui` — البلاجنات الأصلية مُحاكاة (تتحقق من الاستدعاءات والواجهة فقط).
 - JVM/Kotlin: `node tests/kt/gen_ff_cases.js && tests/kt/run_jvm.sh` (يتطلب ffmpeg على المضيف وGradle lib لمترجم Kotlin).
