@@ -1,49 +1,25 @@
-// وحدة مكتبة أندرويد للبلاجن. AGP و Kotlin يضيفهما APKMaker في build.gradle الجذر.
-apply plugin: 'com.android.library'
-apply plugin: 'org.jetbrains.kotlin.android'
-
-android {
-    namespace "com.dark.omnillm"
-    compileSdk rootProject.ext.compileSdkVersion
-
-    // NDK/CMake: تُثبَّت صراحةً في الـworkflow (خطوة «تجهيز NDK وCMake») قبل Gradle.
-    // لتغيير الإصدار محلياً: -PomniLlmNdk=<ver> ، -PomniLlmCmake=<ver>
-    ndkVersion = (project.findProperty('omniLlmNdk') ?: '27.2.12479018') as String
-
-    defaultConfig {
-        minSdkVersion rootProject.ext.minSdkVersion
-        targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
-        ndk {
-            // llama.cpp يدعم رسمياً على أندرويد: arm64-v8a (الهواتف) و x86_64 (المحاكي). armeabi-v7a غير مدعوم من llama.cpp
-            // (لا يوجد في CI الخاص به): على الأجهزة 32-بت يعلن البلاجن «OmniLlm unavailable» بدل أن يكسر البناء أو يتعطل.
-            // للمحاكي أضف x86_64 عبر: -PomniLlmAbis=arm64-v8a,x86_64
-            abiFilters.addAll(((project.findProperty('omniLlmAbis') ?: 'arm64-v8a') as String).split(',').collect { it.trim() })
-        }
-        externalNativeBuild {
-            cmake {
-                arguments "-DANDROID_STL=c++_static", "-DCMAKE_BUILD_TYPE=Release", "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON"
-            }
-        }
-    }
-    externalNativeBuild {
-        cmake {
-            path "src/main/cpp/CMakeLists.txt"
-            version = (project.findProperty('omniLlmCmake') ?: '3.22.1') as String
-        }
-    }
-    compileOptions {
-        sourceCompatibility rootProject.ext.darkJava
-        targetCompatibility rootProject.ext.darkJava
-    }
-    kotlinOptions {
-        jvmTarget = rootProject.ext.darkJava.toString()
-    }
+// تعديلات app/build.gradle لمحرك الفيديو (yt-dlp/Python/FFmpeg). تُدمج دمجاً ذكياً (إضافة فقط) عبر native.py files.
+// Tesseract4Android (تبعية omni-ocr المتعدّية) منشور على JitPack فقط. تبعيات مشاريع البلاجن تُحلّ
+// بمستودعات وحدة app نفسها، لذا لازم JitPack هنا (وليس فقط داخل plugins/omni-ocr/android/build.gradle).
+repositories {
+    maven { url 'https://jitpack.io' }
 }
 
-dependencies {
-    implementation project(':capacitor-android')
-    // يوفّر androidx.activity (ActivityResult) لمنتقي الملفات — نفس ما يفعله omni-native
-    implementation "androidx.appcompat:appcompat:${rootProject.hasProperty('androidxAppCompatVersion') ? rootProject.ext.androidxAppCompatVersion : '1.7.0'}"
+android {
+    defaultConfig {
+        // المحرك ملفات .so ثقيلة لكل معمارية؛ نكتفي بمعماريات الهواتف الفعلية (أصغر حجماً):
+        //   arm64-v8a  : كل الهواتف الحديثة
+        //   armeabi-v7a: الهواتف 32-بت القديمة
+        // x86/x86_64 (المحاكيات فقط) غير مضمّنة. لاختبار على محاكي x86_64 أضفه هنا مؤقتاً.
+        ndk {
+            abiFilters 'arm64-v8a', 'armeabi-v7a'
+        }
+    }
+    // youtubedl-android يشغّل Python/FFmpeg كملفات تنفيذية من مجلد nativeLibraryDir:
+    // لازم تُستخرج الملفات عند التثبيت (extractNativeLibs=true).
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
 }

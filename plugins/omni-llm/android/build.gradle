@@ -44,4 +44,6 @@ android {
 
 dependencies {
     implementation project(':capacitor-android')
+    // يوفّر androidx.activity (ActivityResult) لمنتقي الملفات — نفس ما يفعله omni-native
+    implementation "androidx.appcompat:appcompat:${rootProject.hasProperty('androidxAppCompatVersion') ? rootProject.ext.androidxAppCompatVersion : '1.7.0'}"
 }
